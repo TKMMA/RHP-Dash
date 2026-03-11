@@ -9,16 +9,18 @@
         body { display: flex; height: 100vh; margin: 0; font-family: sans-serif; background: #f8f9fa; }
         #map { flex: 1; border-right: 2px solid #dee2e6; }
         #dashboard { width: 550px; padding: 25px; overflow-y: auto; background: white; display: flex; flex-direction: column; }
-        .chart-container { height: 500px; margin-top: 20px; }
+        .chart-container { height: 650px; margin-top: 20px; }
         .controls { background: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #3498db; }
         h2 { color: #2c3e50; margin: 0; padding-bottom: 5px; }
         h4 { color: #7f8c8d; margin: 0 0 10px 0; font-weight: normal; line-height: 1.4; }
         .moku-label { background: white; border: 1px solid #999; padding: 2px 5px; border-radius: 4px; font-weight: bold; }
         
-        /* New Toggle Styling */
         .btn-group { display: flex; background: #ddd; padding: 4px; border-radius: 8px; margin-top: 10px; }
         .btn-group button { flex: 1; border: none; padding: 8px; cursor: pointer; border-radius: 6px; font-weight: bold; transition: 0.3s; }
         .btn-group button.active { background: #3498db; color: white; }
+
+        .filter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; padding: 10px; background: #fff; border-radius: 6px; border: 1px solid #ddd; }
+        .mode-description { font-size: 0.85rem; color: #444; margin-top: 10px; padding: 8px; background: #eef2f7; border-radius: 4px; border-left: 3px solid #3498db; }
     </style>
 </head>
 <body>
@@ -32,11 +34,15 @@
         <strong>View Mode:</strong>
         <div class="btn-group">
             <button id="raw-btn" class="active" onclick="setMode('raw')">Raw Counts</button>
-            <button id="norm-btn" onclick="setMode('norm')">Pop. Adjusted Outliers</button>
+            <button id="norm-btn" onclick="setMode('norm')">Outlier Mode</button>
         </div>
-        <p style="font-size: 0.8rem; margin: 8px 0 0 0; color: #555;">
-            <b>Outlier Mode:</b> Colors map by response intensity and shifts charts to highlight sentiment gaps.
-        </p>
+        
+        <div id="description" class="mode-description">
+            Showing the total number of survey responses received for each category.
+        </div>
+
+        <div id="filter-container" class="filter-group">
+            </div>
     </div>
 
     <div class="chart-container"><canvas id="mainChart"></canvas></div>
@@ -48,9 +54,6 @@
 
     let chart, surveyData = [], mokuFeatures = [], selectedMoku = null, geojsonLayer = null, currentMode = 'raw';
     
-    const surveyUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/RHP_SURVEY_-_View_layer_-_no_emails/FeatureServer/0/query?where=1%3D1&outFields=*&f=json";
-    const mokuUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/Moku%20with%20population%20and%20point%20count/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
-
     const categories = [
         { key: 'Artificialreefs', label: 'Art. Reefs' },
         { key: 'Outplanting', label: 'Outplanting' },
@@ -60,46 +63,60 @@
         { key: 'freshwaterfixes', label: 'Freshwater Fix' }
     ];
 
+    // Initialize Checkboxes
+    const filterContainer = document.getElementById('filter-container');
+    categories.forEach(cat => {
+        const div = document.createElement('div');
+        div.innerHTML = `<label><input type="checkbox" checked value="${cat.key}" onchange="updateDashboard()"> ${cat.label}</label>`;
+        filterContainer.appendChild(div);
+    });
+
     function setMode(mode) {
         currentMode = mode;
         document.getElementById('raw-btn').classList.toggle('active', mode === 'raw');
         document.getElementById('norm-btn').classList.toggle('active', mode === 'norm');
+        
+        const desc = document.getElementById('description');
+        if (mode === 'raw') {
+            desc.innerHTML = "<b>Raw Counts:</b> Visualizing the total volume of responses. Larger bars indicate more community feedback in absolute numbers.";
+        } else {
+            desc.innerHTML = "<b>Outlier Mode:</b> Map colors and bars are adjusted for population. Red areas show where community interest is significantly higher than the state average, even with fewer people.";
+        }
         updateDashboard();
     }
 
-    // Color ramp for the map outliers
-    function getColor(d) {
-        return d > 2.0 ? '#800026' : d > 1.5 ? '#BD0026' : d > 1.0 ? '#E31A1C' : d > 0.5 ? '#FC4E2A' : '#FED976';
+    function getColor(intensity) {
+        return intensity > 2.0 ? '#800026' : intensity > 1.5 ? '#BD0026' : intensity > 1.1 ? '#E31A1C' : intensity > 0.8 ? '#FC4E2A' : '#FED976';
     }
 
     function updateDashboard() {
         const isNormalized = (currentMode === 'norm');
+        const activeKeys = Array.from(document.querySelectorAll('#filter-container input:checked')).map(i => i.value);
+        const activeCategories = categories.filter(c => activeKeys.includes(c.key));
+
         const currentData = selectedMoku ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS) : surveyData;
-        const totalSurveyCount = surveyData.length;
         const statePop = mokuFeatures.reduce((acc, curr) => acc + (curr.properties.sum_TOTPOP_CY || 0), 0);
         
-        // Update Stats Header
         if (selectedMoku) {
             const mPop = selectedMoku.properties.sum_TOTPOP_CY || 1;
             const mRes = currentData.length;
-            const gap = ((mRes/totalSurveyCount)*100 - (mPop/statePop)*100).toFixed(2);
+            const gap = ((mRes/surveyData.length)*100 - (mPop/statePop)*100).toFixed(2);
             document.getElementById('moku-title').innerText = selectedMoku.properties.MO_IS;
-            document.getElementById('moku-stats').innerHTML = `${mRes} Responses | Pop: ${mPop.toLocaleString()}<br><b>${gap >= 0 ? '+' : ''}${gap}% Rep. Gap</b>`;
+            document.getElementById('moku-stats').innerHTML = `${mRes} Responses | Pop: ${mPop.toLocaleString()}<br><b>${gap >= 0 ? '+' : ''}${gap}% Representation Gap</b>`;
         }
 
-        const scalar = isNormalized ? (1000 / (selectedMoku ? selectedMoku.properties.sum_TOTPOP_CY : statePop)) : 1;
+        const localPop = selectedMoku ? (selectedMoku.properties.sum_TOTPOP_CY || 1) : statePop;
+        const scalar = isNormalized ? (1000 / localPop) : 1;
 
-        const datasets = categories.map(cat => {
+        const chartData = activeCategories.map(cat => {
             const m = (currentData.filter(d => d.attributes[cat.key] === 'Most effective').length * scalar);
             const s = (currentData.filter(d => d.attributes[cat.key] === 'Somewhat effective').length * scalar);
             const h = (currentData.filter(d => d.attributes[cat.key] === 'Hardly effective').length * scalar);
-            
-            // To "Float" the bar: start the 'Somewhat' bar at negative half its value.
             const offset = -(s / 2);
             return {
-                most: [offset + s, offset + s + m], // Float Most on top of Somewhat
-                some: [offset, offset + s],         // Float Somewhat centered on zero
-                hardly: [offset - h, offset]        // Float Hardly below Somewhat
+                most: [offset + s + 0.05, offset + s + m + 0.05], // Slight offset
+                some: [offset, offset + s],
+                hardly: [offset - h - 0.05, offset - 0.05]
             };
         });
 
@@ -107,40 +124,45 @@
         chart = new Chart(document.getElementById('mainChart'), {
             type: 'bar',
             data: {
-                labels: categories.map(c => c.label),
+                labels: activeCategories.map(c => c.label),
                 datasets: [
-                    { label: 'Most Effective', data: datasets.map(d => d.most), backgroundColor: '#2ecc71' },
-                    { label: 'Somewhat Effective', data: datasets.map(d => d.some), backgroundColor: '#f1c40f' },
-                    { label: 'Hardly Effective', data: datasets.map(d => d.hardly), backgroundColor: '#e74c3c' }
+                    { label: 'Most Effective', data: chartData.map(d => d.most), backgroundColor: '#2ecc71', barThickness: 45 },
+                    { label: 'Somewhat Effective', data: chartData.map(d => d.some), backgroundColor: '#f1c40f', barThickness: 45 },
+                    { label: 'Hardly Effective', data: chartData.map(d => d.hardly), backgroundColor: '#e74c3c', barThickness: 45 }
                 ]
             },
             options: {
-                indexAxis: 'x',
-                scales: { 
-                    y: { 
-                        beginAtZero: false, 
-                        grid: { color: (c) => c.tick.value === 0 ? '#000' : '#ddd', lineWidth: (c) => c.tick.value === 0 ? 3 : 1 } 
-                    } 
-                },
+                maintainAspectRatio: false,
+                scales: { y: { grid: { color: (c) => c.tick.value === 0 ? '#000' : '#ddd', lineWidth: (c) => c.tick.value === 0 ? 3 : 1 } } },
                 plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${(c.raw[1] - c.raw[0]).toFixed(2)}` } } }
             }
         });
 
-        // Update Map Styles for Outliers
         geojsonLayer.eachLayer(layer => {
-            const mName = layer.feature.properties.MO_IS;
             const mPop = layer.feature.properties.sum_TOTPOP_CY || 1;
-            const mRes = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === mName).length;
+            const mRes = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === layer.feature.properties.MO_IS);
             
-            const intensity = (mRes / mPop) / (totalSurveyCount / statePop);
+            // Calculate intensity based only on checked categories
+            let localIntensitySum = 0;
+            activeKeys.forEach(key => {
+                localIntensitySum += mRes.filter(d => d.attributes[key] === 'Most effective').length;
+            });
+
+            const stateIntensity = (surveyData.length / statePop);
+            const intensity = (localIntensitySum / mPop) / stateIntensity;
+
             layer.setStyle({
                 fillColor: isNormalized ? getColor(intensity) : '#3498db',
-                fillOpacity: isNormalized ? 0.7 : 0.2,
-                weight: (selectedMoku && selectedMoku.properties.MO_IS === mName) ? 4 : 1,
-                color: (selectedMoku && selectedMoku.properties.MO_IS === mName) ? '#000' : '#2c3e50'
+                fillOpacity: isNormalized ? 0.8 : 0.2,
+                weight: (selectedMoku && selectedMoku.properties.MO_IS === layer.feature.properties.MO_IS) ? 4 : 1,
+                color: '#2c3e50'
             });
         });
     }
+
+    // Load Data logic remains same as previous functional version...
+    const surveyUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/RHP_SURVEY_-_View_layer_-_no_emails/FeatureServer/0/query?where=1%3D1&outFields=*&f=json";
+    const mokuUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/Moku%20with%20population%20and%20point%20count/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
 
     Promise.all([fetch(surveyUrl).then(r => r.json()), fetch(mokuUrl).then(r => r.json())])
         .then(([sJson, mGeoJson]) => {
@@ -155,7 +177,7 @@
                     });
                 }
             }).addTo(map);
-            updateDashboard();
+            setMode('raw');
         });
 </script>
 </body>
