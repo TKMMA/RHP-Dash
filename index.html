@@ -6,10 +6,11 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { display: flex; height: 100vh; margin: 0; font-family: sans-serif; }
-        #map { flex: 1; border-right: 2px solid #ccc; }
-        #dashboard { width: 450px; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
-        .chart-box { height: 300px; }
+        body { display: flex; height: 100vh; margin: 0; font-family: sans-serif; background: #f8f9fa; }
+        #map { flex: 1; border-right: 2px solid #dee2e6; }
+        #dashboard { width: 550px; padding: 25px; overflow-y: auto; background: white; }
+        .chart-container { height: 450px; margin-top: 20px; }
+        h2 { color: #2c3e50; margin-top: 0; border-bottom: 2px solid #eee; padding-bottom: 10px; }
     </style>
 </head>
 <body>
@@ -17,65 +18,82 @@
 <div id="map"></div>
 <div id="dashboard">
     <h2 id="moku-title">Statewide Overview</h2>
-    <div class="chart-box"><canvas id="stackedBar"></canvas></div>
-    <p><i>Click a Moku on the map to filter results</i></p>
+    <div class="chart-container"><canvas id="mainChart"></canvas></div>
+    <p><small><i>Click a Moku to calculate local habitat restoration preferences.</i></small></p>
 </div>
 
 <script>
-    // 1. Setup the Map
     const map = L.map('map').setView([20.4, -157.4], 7);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    L.tileLayer('https://{s}.tile.online/raster/hillshading/{z}/{x}/{y}.png').addTo(map);
 
     let chart;
-    const mokuLayerUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/Moku%20with%20population%20and%20point%20count/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
+    let surveyData = [];
+    const surveyUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/RHP_SURVEY_-_View_layer_-_no_emails/FeatureServer/0/query?where=1%3D1&outFields=*&f=json";
+    const mokuUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/Moku%20with%20population%20and%20point%20count/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
 
-    // 2. Initialize the Chart (Stacked Bar)
-    function initChart(data) {
-        const ctx = document.getElementById('stackedBar').getContext('2d');
-        if (chart) chart.destroy();
+    // The 6 categories from your PDF and Survey JSON
+    const categories = [
+        { key: 'Artificialreefs', label: 'Art. Reefs' },
+        { key: 'Outplanting', label: 'Outplanting' },
+        { key: 'limuremoval', label: 'Limu Removal' },
+        { key: 'Stocking', label: 'Fish Stocking' },
+        { key: 'Invasivecontrol', label: 'Invasive Ctrl' },
+        { key: 'freshwaterfixes', label: 'Freshwater Fix' }
+    ];
+
+    function updateChart(filteredData, title) {
+        document.getElementById('moku-title').innerText = title;
         
+        const counts = categories.map(cat => {
+            return {
+                most: filteredData.filter(d => d.attributes[cat.key] === 'Most effective').length,
+                some: filteredData.filter(d => d.attributes[cat.key] === 'Somewhat effective').length,
+                hardly: filteredData.filter(d => d.attributes[cat.key] === 'Hardly effective').length
+            };
+        });
+
+        const ctx = document.getElementById('mainChart').getContext('2d');
+        if (chart) chart.destroy();
+
         chart = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: ['Artificial Reefs'],
+                labels: categories.map(c => c.label),
                 datasets: [
-                    { label: 'Most', data: [data.most], backgroundColor: '#2ecc71' },
-                    { label: 'Somewhat', data: [data.somewhat], backgroundColor: '#f1c40f' },
-                    { label: 'Hardly', data: [data.hardly], backgroundColor: '#e74c3c' }
+                    { label: 'Most Effective', data: counts.map(c => c.most), backgroundColor: '#2ecc71' },
+                    { label: 'Somewhat Effective', data: counts.map(c => c.some), backgroundColor: '#f1c40f' },
+                    { label: 'Hardly Effective', data: counts.map(c => c.hardly), backgroundColor: '#e74c3c' }
                 ]
             },
             options: {
-                indexAxis: 'y',
-                scales: { x: { stacked: true, beginAtZero: true }, y: { stacked: true } },
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
                 plugins: { legend: { position: 'bottom' } }
             }
         });
     }
 
-    // 3. Load Moku Polygons & Add Interaction
-    fetch(mokuLayerUrl)
-        .then(res => res.json())
-        .then(data => {
-            L.geoJSON(data, {
-                style: { color: '#3498db', weight: 2, fillOpacity: 0.2 },
+    // Load Data & Initialize
+    Promise.all([fetch(surveyUrl).then(r => r.json()), fetch(mokuUrl).then(r => r.json())])
+        .then(([sJson, mGeoJson]) => {
+            surveyData = sJson.features;
+            
+            // Draw Map
+            L.geoJSON(mGeoJson, {
+                style: { color: '#2c3e50', weight: 1, fillOpacity: 0.1 },
                 onEachFeature: (feature, layer) => {
                     layer.on('click', () => {
-                        const props = feature.properties;
-                        document.getElementById('moku-title').innerText = props.MO_IS;
-                        
-                        // Use your pre-calculated fields from the JSON tab
-                        initChart({
-                            most: props.reef_most || 0,
-                            somewhat: props.reef_somewhat || 0,
-                            hardly: props.reef_hardly || 0
-                        });
+                        const mokuName = feature.properties.MO_IS;
+                        const filtered = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === mokuName);
+                        updateChart(filtered, mokuName);
                     });
                 }
             }).addTo(map);
-        });
 
-    // Initial Statewide View (Hardcoded based on your PDF totals)
-    initChart({ most: 455, somewhat: 452, hardly: 110 });
+            // Initial Statewide View
+            updateChart(surveyData, "Statewide Overview");
+        });
 </script>
 </body>
 </html>
