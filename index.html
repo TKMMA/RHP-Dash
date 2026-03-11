@@ -9,16 +9,16 @@
         body { display: flex; height: 100vh; margin: 0; font-family: sans-serif; background: #f8f9fa; }
         #map { flex: 1; border-right: 2px solid #dee2e6; }
         #dashboard { width: 500px; padding: 25px; overflow-y: auto; background: white; display: flex; flex-direction: column; }
-        .chart-container { height: 400px; margin-top: 20px; }
-        .controls { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 10px; }
-        h2 { color: #2c3e50; margin-top: 0; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-        .moku-label { background: white; border: 1px solid #999; padding: 2px 5px; border-radius: 4px; font-weight: bold; }
-        .switch { position: relative; display: inline-block; width: 50px; height: 24px; vertical-align: middle; margin-right: 10px; }
+        .chart-container { height: 450px; margin-top: 20px; }
+        .controls { background: #f1f3f5; padding: 15px; border-radius: 8px; border-left: 5px solid #3498db; }
+        h2 { color: #2c3e50; margin: 0; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        /* Toggle Switch Styling */
+        .switch { position: relative; display: inline-block; width: 40px; height: 20px; margin-right: 10px; }
         .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
-        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 20px; }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
         input:checked + .slider { background-color: #3498db; }
-        input:checked + .slider:before { transform: translateX(26px); }
+        input:checked + .slider:before { transform: translateX(20px); }
     </style>
 </head>
 <body>
@@ -32,14 +32,13 @@
             <input type="checkbox" id="norm-toggle">
             <span class="slider"></span>
         </label>
-        <strong>Normalize by Population</strong>
-        <p style="font-size: 0.8rem; margin: 5px 0 0 0;">Toggle to see responses per 1,000 residents.</p>
+        <strong>Identify Regional Outliers</strong>
+        <p style="font-size: 0.8rem; margin: 5px 0 0 0; color: #555;">
+            Normalizes by population to show where interest is higher than the state average (Index 1.0).
+        </p>
     </div>
 
     <div class="chart-container"><canvas id="mainChart"></canvas></div>
-    <p style="font-size: 0.9rem; color: #666; margin-top: 20px;">
-        Click a Moku on the map to filter. Bars show raw response counts unless normalization is toggled on.
-    </p>
 </div>
 
 <script>
@@ -47,7 +46,6 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     let chart, surveyData = [], mokuFeatures = [], selectedMoku = null, selectedLayer = null;
-
     const surveyUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/RHP_SURVEY_-_View_layer_-_no_emails/FeatureServer/0/query?where=1%3D1&outFields=*&f=json";
     const mokuUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/Moku%20with%20population%20and%20point%20count/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
 
@@ -62,27 +60,31 @@
 
     function updateChart() {
         const isNormalized = document.getElementById('norm-toggle').checked;
-        const dataToProcess = selectedMoku ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS) : surveyData;
-        const title = selectedMoku ? selectedMoku.properties.MO_IS : "Statewide Overview";
+        const currentMokuData = selectedMoku ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS) : surveyData;
         
-        // Find population (Sum of all mokus if statewide)
-        let pop = 1450000; // default state approx
-        if (selectedMoku) {
-            pop = selectedMoku.properties.sum_TOTPOP_CY || 1;
-        } else {
-            pop = mokuFeatures.reduce((acc, curr) => acc + (curr.properties.sum_TOTPOP_CY || 0), 0);
-        }
+        // 1. Get Populations
+        const statePop = mokuFeatures.reduce((acc, curr) => acc + (curr.properties.sum_TOTPOP_CY || 0), 0);
+        const localPop = selectedMoku ? (selectedMoku.properties.sum_TOTPOP_CY || 1) : statePop;
 
-        const scalar = isNormalized ? (1000 / pop) : 1;
-        const yAxisLabel = isNormalized ? "Responses per 1,000 Residents" : "Number of Responses";
+        const yAxisTitle = isNormalized ? "Impact Index (1.0 = State Avg)" : "Raw Response Count";
 
-        document.getElementById('moku-title').innerText = `${title} (${dataToProcess.length} Responses)`;
+        // 2. Calculate Outlier Indices
+        const dataSets = categories.map(cat => {
+            const stateMost = surveyData.filter(d => d.attributes[cat.key] === 'Most effective').length;
+            const stateRate = stateMost / statePop; // Baseline interest rate
 
-        const counts = categories.map(cat => ({
-            most: (dataToProcess.filter(d => d.attributes[cat.key] === 'Most effective').length * scalar).toFixed(2),
-            some: (dataToProcess.filter(d => d.attributes[cat.key] === 'Somewhat effective').length * scalar).toFixed(2),
-            hardly: (dataToProcess.filter(d => d.attributes[cat.key] === 'Hardly effective').length * scalar).toFixed(2)
-        }));
+            const localMost = currentMokuData.filter(d => d.attributes[cat.key] === 'Most effective').length;
+            const localRate = localMost / localPop;
+
+            // If normalized, show the ratio. If not, show raw count.
+            const value = isNormalized ? (localRate / stateRate).toFixed(2) : localMost;
+            
+            return {
+                val: parseFloat(value),
+                // Highlight if significantly higher than average (e.g., 20% higher)
+                color: (isNormalized && value > 1.2) ? '#f1c40f' : '#2ecc71' 
+            };
+        });
 
         const ctx = document.getElementById('mainChart').getContext('2d');
         if (chart) chart.destroy();
@@ -91,20 +93,25 @@
             type: 'bar',
             data: {
                 labels: categories.map(c => c.label),
-                datasets: [
-                    { label: 'Most Effective', data: counts.map(c => c.most), backgroundColor: '#2ecc71' },
-                    { label: 'Somewhat Effective', data: counts.map(c => c.some), backgroundColor: '#f1c40f' },
-                    { label: 'Hardly Effective', data: counts.map(c => c.hardly), backgroundColor: '#e74c3c' }
-                ]
+                datasets: [{
+                    label: isNormalized ? 'Regional Preference Intensity' : 'Most Effective Counts',
+                    data: dataSets.map(d => d.val),
+                    backgroundColor: dataSets.map(d => d.color),
+                    borderWidth: 1,
+                    borderColor: '#27ae60'
+                }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: { 
-                    x: { stacked: true }, 
-                    y: { stacked: true, beginAtZero: true, title: { display: true, text: yAxisLabel } } 
-                },
-                plugins: { legend: { position: 'bottom' } }
+                    y: { 
+                        beginAtZero: true, 
+                        title: { display: true, text: yAxisTitle },
+                        // Draw a line at 1.0 to show the state average
+                        grid: { color: (context) => context.tick.value === 1 && isNormalized ? '#e74c3c' : '#ddd' }
+                    } 
+                }
             }
         });
     }
@@ -116,24 +123,18 @@
             surveyData = sJson.features;
             mokuFeatures = mGeoJson.features;
             
-            const geojson = L.geoJSON(mGeoJson, {
+            L.geoJSON(mGeoJson, {
                 style: { color: '#2c3e50', weight: 1, fillOpacity: 0.1 },
                 onEachFeature: (feature, layer) => {
-                    const name = feature.properties.MO_IS;
-                    const count = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === name).length;
-                    layer.bindTooltip(`<b>${name}</b><br>${count} Responses`, { direction: "center", className: "moku-label" });
-
                     layer.on('click', () => {
-                        if (selectedLayer) geojson.resetStyle(selectedLayer);
+                        if (selectedLayer) layer.options.color = '#2c3e50'; 
                         selectedLayer = layer;
                         selectedMoku = feature;
-                        layer.setStyle({ color: '#000', weight: 4, fillOpacity: 0.3 });
+                        layer.setStyle({ color: '#000', weight: 4 });
                         updateChart();
-                        map.fitBounds(layer.getBounds());
                     });
                 }
             }).addTo(map);
-
             updateChart();
         });
 </script>
