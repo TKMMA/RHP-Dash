@@ -11,22 +11,25 @@
         #map { flex: 1; position: relative; }
         #dashboard { width: 550px; padding: 25px; overflow-y: auto; background: white; display: flex; flex-direction: column; border-left: 2px solid #dee2e6; }
         
-        /* Floating Header over Map */
+        /* Centered Header over Map */
         .map-header {
             position: absolute;
-            top: 10px;
-            left: 50px; /* Offset from zoom controls */
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
             z-index: 1000;
-            background: rgba(255, 255, 255, 0.85);
-            padding: 12px 18px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            background: rgba(255, 255, 255, 0.88);
+            padding: 8px 20px;
+            border-radius: 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
             pointer-events: auto;
             border: 1px solid rgba(0,0,0,0.1);
+            text-align: center;
+            white-space: nowrap;
         }
-        .header-title { color: #2c3e50; margin: 0; font-size: 1.4rem; font-weight: bold; }
-        .header-subtitle { color: #7f8c8d; margin: 2px 0; font-size: 0.95rem; font-weight: bold; }
-        .header-version { color: #7f8c8d; margin: 0; font-size: 0.85rem; font-weight: normal; }
+        .header-title { color: #2c3e50; font-size: 1.4rem; font-weight: bold; display: inline-block; }
+        .header-subtitle { color: #7f8c8d; font-size: 0.95rem; font-weight: bold; display: inline-block; margin-left: 10px; border-left: 1px solid #ccc; padding-left: 10px; }
+        .header-version { color: #95a5a6; margin-top: 2px; font-size: 0.8rem; font-weight: normal; }
         .header-version a { color: #3498db; text-decoration: none; }
 
         .chart-container { height: 600px; margin-top: 10px; position: relative; }
@@ -36,17 +39,15 @@
         
         .filter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding: 10px; background: #fff; border-radius: 6px; border: 1px solid #ddd; }
         .btn-group { display: flex; background: #ddd; padding: 4px; border-radius: 8px; margin-bottom: 10px; }
-        .btn-group button { flex: 1; border: none; padding: 8px; cursor: pointer; border-radius: 6px; font-weight: bold; }
-        .btn-group button.active { background: #3498db; color: white; }
+        .btn-group button { 
+            flex: 1; border: none; padding: 8px; cursor: help; border-radius: 6px; font-weight: bold; transition: 0.2s; 
+        }
+        .btn-group button.active { background: #3498db; color: white; cursor: default; }
         
         /* Permanent Label Styling */
         .moku-point-label {
-            background: none !important;
-            border: none !important;
-            box-shadow: none !important;
-            color: #000;
-            font-weight: bold;
-            font-size: 12px;
+            background: none !important; border: none !important; box-shadow: none !important;
+            color: #000; font-weight: bold; font-size: 12px;
             text-shadow: 1px 1px 2px white, -1px -1px 2px white;
         }
 
@@ -58,8 +59,8 @@
 
 <div id="map">
     <div class="map-header">
-        <div class="header-title">GFA Dashboard</div>
-        <div class="header-subtitle">The Reef Habitat Plan</div>
+        <span class="header-title">GFA Dashboard</span>
+        <span class="header-subtitle">The Reef Habitat Plan</span>
         <div class="header-version">By TK for DAR | version 3/3/26 | <a href="https://docs.google.com/document/d/1yZgAC0Bs_O5a_DOmwVkMjCMVveab1P2VcyMG6-hPV_Q/edit?usp=sharing" target="_blank">RHP links</a></div>
     </div>
 </div>
@@ -70,8 +71,14 @@
     
     <div class="controls">
         <div class="btn-group">
-            <button id="raw-btn" class="active" onclick="setMode('raw')">Raw Counts</button>
-            <button id="norm-btn" onclick="setMode('norm')">Outlier Mode</button>
+            <button id="raw-btn" class="active" onclick="setMode('raw')" 
+                title="RAW MODE: Displays absolute response counts. Ideal for seeing where the highest volume of community feedback is coming from across the islands.">
+                Raw Counts
+            </button>
+            <button id="norm-btn" onclick="setMode('norm')" 
+                title="OUTLIER MODE: Normalizes data by Moku population. This highlights 'Hotspots' where community interest is statistically higher than the state average per capita, preventing larger populations from drowning out smaller ones.">
+                Outlier Mode
+            </button>
         </div>
         <div id="filter-container" class="filter-group"></div>
     </div>
@@ -226,13 +233,9 @@
         });
     }
 
-    // Toggle Labels based on Zoom
     map.on('zoomend', function() {
-        if (map.getZoom() < 7) {
-            map.removeLayer(labelLayers);
-        } else {
-            map.addLayer(labelLayers);
-        }
+        if (map.getZoom() < 7) { map.removeLayer(labelLayers); } 
+        else { map.addLayer(labelLayers); }
     });
 
     map.on('click', (e) => { if (e.originalEvent.target.id === 'map') { selectedMoku = null; updateDashboard(); } });
@@ -243,13 +246,11 @@
     ]).then(([sJson, mGeoJson]) => {
         surveyData = sJson.features; 
         mokuFeatures = mGeoJson.features;
-        
         geojsonLayer = L.geoJSON(mGeoJson, {
             onEachFeature: (feature, layer) => {
                 const name = feature.properties.MO_IS;
                 const count = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === name).length;
                 
-                // 1. Permanent Count Label
                 const center = layer.getBounds().getCenter();
                 const label = L.marker(center, {
                     icon: L.divIcon({
@@ -261,14 +262,8 @@
                 });
                 labelLayers.addLayer(label);
 
-                // 2. Hover Strictly MO_IS
                 layer.bindTooltip(`<b>${name}</b>`, { sticky: true });
-
-                layer.on('click', (e) => { 
-                    L.DomEvent.stopPropagation(e); 
-                    selectedMoku = feature; 
-                    updateDashboard(); 
-                });
+                layer.on('click', (e) => { L.DomEvent.stopPropagation(e); selectedMoku = feature; updateDashboard(); });
             }
         }).addTo(map);
         updateDashboard();
