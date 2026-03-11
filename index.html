@@ -1,19 +1,20 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RHP Dynamic Dashboard</title>
+    <title>RHP Diverging Outlier Dashboard</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { display: flex; height: 100vh; margin: 0; font-family: sans-serif; background: #f8f9fa; }
         #map { flex: 1; border-right: 2px solid #dee2e6; }
-        #dashboard { width: 500px; padding: 25px; overflow-y: auto; background: white; display: flex; flex-direction: column; }
-        .chart-container { height: 450px; margin-top: 20px; }
-        .controls { background: #f1f3f5; padding: 15px; border-radius: 8px; border-left: 5px solid #3498db; }
-        h2 { color: #2c3e50; margin: 0; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-        /* Toggle Switch Styling */
-        .switch { position: relative; display: inline-block; width: 40px; height: 20px; margin-right: 10px; }
+        #dashboard { width: 550px; padding: 25px; overflow-y: auto; background: white; display: flex; flex-direction: column; }
+        .chart-container { height: 500px; margin-top: 20px; }
+        .controls { background: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #3498db; }
+        h2 { color: #2c3e50; margin: 0; padding-bottom: 5px; }
+        h4 { color: #7f8c8d; margin: 0 0 10px 0; font-weight: normal; }
+        .moku-label { background: white; border: 1px solid #999; padding: 2px 5px; border-radius: 4px; font-weight: bold; }
+        .switch { position: relative; display: inline-block; width: 40px; height: 20px; margin-right: 10px; vertical-align: middle; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 20px; }
         .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
@@ -26,15 +27,16 @@
 <div id="map"></div>
 <div id="dashboard">
     <h2 id="moku-title">Statewide Overview</h2>
+    <h4 id="moku-stats">1,094 Total Responses</h4>
     
     <div class="controls">
         <label class="switch">
             <input type="checkbox" id="norm-toggle">
             <span class="slider"></span>
         </label>
-        <strong>Identify Regional Outliers</strong>
+        <strong>Diverging Population Normalization</strong>
         <p style="font-size: 0.8rem; margin: 5px 0 0 0; color: #555;">
-            Normalizes by population to show where interest is higher than the state average (Index 1.0).
+            Centers "Somewhat" on zero. High bars = positive outliers per capita.
         </p>
     </div>
 
@@ -60,29 +62,22 @@
 
     function updateChart() {
         const isNormalized = document.getElementById('norm-toggle').checked;
-        const currentMokuData = selectedMoku ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS) : surveyData;
+        const currentData = selectedMoku ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS) : surveyData;
+        const localPop = selectedMoku ? (selectedMoku.properties.sum_TOTPOP_CY || 1) : 1450000;
         
-        // 1. Get Populations
-        const statePop = mokuFeatures.reduce((acc, curr) => acc + (curr.properties.sum_TOTPOP_CY || 0), 0);
-        const localPop = selectedMoku ? (selectedMoku.properties.sum_TOTPOP_CY || 1) : statePop;
+        // Scalar to convert to "Per 1,000 residents"
+        const scalar = isNormalized ? (1000 / localPop) : 1;
 
-        const yAxisTitle = isNormalized ? "Impact Index (1.0 = State Avg)" : "Raw Response Count";
-
-        // 2. Calculate Outlier Indices
-        const dataSets = categories.map(cat => {
-            const stateMost = surveyData.filter(d => d.attributes[cat.key] === 'Most effective').length;
-            const stateRate = stateMost / statePop; // Baseline interest rate
-
-            const localMost = currentMokuData.filter(d => d.attributes[cat.key] === 'Most effective').length;
-            const localRate = localMost / localPop;
-
-            // If normalized, show the ratio. If not, show raw count.
-            const value = isNormalized ? (localRate / stateRate).toFixed(2) : localMost;
+        const chartSets = categories.map(cat => {
+            const m = currentData.filter(d => d.attributes[cat.key] === 'Most effective').length * scalar;
+            const s = currentData.filter(d => d.attributes[cat.key] === 'Somewhat effective').length * scalar;
+            const h = currentData.filter(d => d.attributes[cat.key] === 'Hardly effective').length * scalar;
             
             return {
-                val: parseFloat(value),
-                // Highlight if significantly higher than average (e.g., 20% higher)
-                color: (isNormalized && value > 1.2) ? '#f1c40f' : '#2ecc71' 
+                most: m,
+                somePos: s / 2,
+                someNeg: -(s / 2),
+                hardly: -h
             };
         });
 
@@ -93,24 +88,26 @@
             type: 'bar',
             data: {
                 labels: categories.map(c => c.label),
-                datasets: [{
-                    label: isNormalized ? 'Regional Preference Intensity' : 'Most Effective Counts',
-                    data: dataSets.map(d => d.val),
-                    backgroundColor: dataSets.map(d => d.color),
-                    borderWidth: 1,
-                    borderColor: '#27ae60'
-                }]
+                datasets: [
+                    { label: 'Most Effective', data: chartSets.map(d => d.most), backgroundColor: '#2ecc71', stack: 'stack1' },
+                    { label: 'Somewhat (Upper)', data: chartSets.map(d => d.somePos), backgroundColor: '#f1c40f', stack: 'stack1' },
+                    { label: 'Somewhat (Lower)', data: chartSets.map(d => d.someNeg), backgroundColor: '#f1c40f', stack: 'stack1', showInLegend: false },
+                    { label: 'Hardly Effective', data: chartSets.map(d => d.hardly), backgroundColor: '#e74c3c', stack: 'stack1' }
+                ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                scales: { 
+                scales: {
+                    x: { stacked: true },
                     y: { 
-                        beginAtZero: true, 
-                        title: { display: true, text: yAxisTitle },
-                        // Draw a line at 1.0 to show the state average
-                        grid: { color: (context) => context.tick.value === 1 && isNormalized ? '#e74c3c' : '#ddd' }
-                    } 
+                        stacked: true,
+                        title: { display: true, text: isNormalized ? "Index per 1k Residents" : "Response Count" },
+                        grid: { color: (c) => c.tick.value === 0 ? '#000' : '#ddd', lineWidth: (c) => c.tick.value === 0 ? 2 : 1 }
+                    }
+                },
+                plugins: {
+                    legend: { labels: { filter: (item) => !item.text.includes('(Lower)') } }
                 }
             }
         });
@@ -123,15 +120,28 @@
             surveyData = sJson.features;
             mokuFeatures = mGeoJson.features;
             
-            L.geoJSON(mGeoJson, {
+            const geojson = L.geoJSON(mGeoJson, {
                 style: { color: '#2c3e50', weight: 1, fillOpacity: 0.1 },
                 onEachFeature: (feature, layer) => {
+                    const name = feature.properties.MO_IS;
+                    const count = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === name).length;
+                    
+                    layer.bindTooltip(`<b>${name}</b><br>${count} Responses`, { direction: "center", className: "moku-label" });
+
                     layer.on('click', () => {
-                        if (selectedLayer) layer.options.color = '#2c3e50'; 
+                        if (selectedLayer) geojson.resetStyle(selectedLayer);
                         selectedLayer = layer;
                         selectedMoku = feature;
-                        layer.setStyle({ color: '#000', weight: 4 });
+                        
+                        // RESTORE SELECTION HIGHLIGHT
+                        layer.setStyle({ color: '#000', weight: 4, fillOpacity: 0.3 });
+                        
+                        // UPDATE HEADER LABELS
+                        document.getElementById('moku-title').innerText = name;
+                        document.getElementById('moku-stats').innerText = `${count} Responses | Pop: ${feature.properties.sum_TOTPOP_CY.toLocaleString()}`;
+                        
                         updateChart();
+                        map.fitBounds(layer.getBounds());
                     });
                 }
             }).addTo(map);
