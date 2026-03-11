@@ -5,22 +5,23 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
     <style>
         body { display: flex; height: 100vh; margin: 0; font-family: sans-serif; background: #f8f9fa; }
-        #map { flex: 1; border-right: 2px solid #dee2e6; }
-        #dashboard { width: 550px; padding: 25px; overflow-y: auto; background: white; display: flex; flex-direction: column; }
-        .chart-container { height: 650px; margin-top: 20px; }
-        .controls { background: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #3498db; }
-        h2 { color: #2c3e50; margin: 0; padding-bottom: 5px; }
-        h4 { color: #7f8c8d; margin: 0 0 10px 0; font-weight: normal; line-height: 1.4; }
-        .moku-label { background: white; border: 1px solid #999; padding: 2px 5px; border-radius: 4px; font-weight: bold; }
-        
-        .btn-group { display: flex; background: #ddd; padding: 4px; border-radius: 8px; margin-top: 10px; }
-        .btn-group button { flex: 1; border: none; padding: 8px; cursor: pointer; border-radius: 6px; font-weight: bold; transition: 0.3s; }
+        #map { flex: 1; position: relative; }
+        #dashboard { width: 550px; padding: 25px; overflow-y: auto; background: white; display: flex; flex-direction: column; border-left: 2px solid #dee2e6; }
+        .chart-container { height: 600px; margin-top: 10px; position: relative; }
+        .controls { background: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid #3498db; }
+        h2 { color: #2c3e50; margin: 0; }
+        h4 { color: #7f8c8d; margin: 5px 0 10px 0; font-weight: normal; line-height: 1.4; }
+        .filter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding: 10px; background: #fff; border-radius: 6px; border: 1px solid #ddd; }
+        .btn-group { display: flex; background: #ddd; padding: 4px; border-radius: 8px; margin-bottom: 10px; }
+        .btn-group button { flex: 1; border: none; padding: 8px; cursor: pointer; border-radius: 6px; font-weight: bold; }
         .btn-group button.active { background: #3498db; color: white; }
-
-        .filter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; padding: 10px; background: #fff; border-radius: 6px; border: 1px solid #ddd; }
-        .mode-description { font-size: 0.85rem; color: #444; margin-top: 10px; padding: 8px; background: #eef2f7; border-radius: 4px; border-left: 3px solid #3498db; }
+        
+        /* Legend Styling */
+        .info.legend { padding: 10px; background: white; background: rgba(255,255,255,0.9); box-shadow: 0 0 15px rgba(0,0,0,0.2); border-radius: 5px; line-height: 18px; color: #555; }
+        .info.legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
     </style>
 </head>
 <body>
@@ -28,32 +29,26 @@
 <div id="map"></div>
 <div id="dashboard">
     <h2 id="moku-title">Statewide Overview</h2>
-    <h4 id="moku-stats">Calculating...</h4>
+    <h4 id="moku-stats">Loading Data...</h4>
     
     <div class="controls">
-        <strong>View Mode:</strong>
         <div class="btn-group">
             <button id="raw-btn" class="active" onclick="setMode('raw')">Raw Counts</button>
             <button id="norm-btn" onclick="setMode('norm')">Outlier Mode</button>
         </div>
-        
-        <div id="description" class="mode-description">
-            Showing the total number of survey responses received for each category.
-        </div>
-
-        <div id="filter-container" class="filter-group">
-            </div>
+        <p id="description" style="font-size: 0.85rem; color: #444; margin: 5px 0;">Showing total feedback volume.</p>
+        <div id="filter-container" class="filter-group"></div>
     </div>
 
     <div class="chart-container"><canvas id="mainChart"></canvas></div>
 </div>
 
 <script>
+    Chart.register(ChartDataLabels);
     const map = L.map('map').setView([20.4, -157.4], 7);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    let chart, surveyData = [], mokuFeatures = [], selectedMoku = null, geojsonLayer = null, currentMode = 'raw';
-    
+    let chart, surveyData = [], mokuFeatures = [], selectedMoku = null, geojsonLayer = null, currentMode = 'raw', legend = null;
     const categories = [
         { key: 'Artificialreefs', label: 'Art. Reefs' },
         { key: 'Outplanting', label: 'Outplanting' },
@@ -63,118 +58,104 @@
         { key: 'freshwaterfixes', label: 'Freshwater Fix' }
     ];
 
-    // Initialize Checkboxes
-    const filterContainer = document.getElementById('filter-container');
+    // Build Checkboxes
     categories.forEach(cat => {
         const div = document.createElement('div');
         div.innerHTML = `<label><input type="checkbox" checked value="${cat.key}" onchange="updateDashboard()"> ${cat.label}</label>`;
-        filterContainer.appendChild(div);
+        document.getElementById('filter-container').appendChild(div);
     });
 
     function setMode(mode) {
         currentMode = mode;
-        document.getElementById('raw-btn').classList.toggle('active', mode === 'raw');
-        document.getElementById('norm-btn').classList.toggle('active', mode === 'norm');
-        
-        const desc = document.getElementById('description');
-        if (mode === 'raw') {
-            desc.innerHTML = "<b>Raw Counts:</b> Visualizing the total volume of responses. Larger bars indicate more community feedback in absolute numbers.";
-        } else {
-            desc.innerHTML = "<b>Outlier Mode:</b> Map colors and bars are adjusted for population. Red areas show where community interest is significantly higher than the state average, even with fewer people.";
-        }
+        document.getElementById('raw-btn').className = mode === 'raw' ? 'active' : '';
+        document.getElementById('norm-btn').className = mode === 'norm' ? 'active' : '';
+        document.getElementById('description').innerText = mode === 'raw' ? "Showing total response volume." : "Colors highlight mokus with higher interest than the state average per capita.";
         updateDashboard();
     }
 
-    function getColor(intensity) {
-        return intensity > 2.0 ? '#800026' : intensity > 1.5 ? '#BD0026' : intensity > 1.1 ? '#E31A1C' : intensity > 0.8 ? '#FC4E2A' : '#FED976';
+    function getColor(d) {
+        return d > 2.0 ? '#800026' : d > 1.5 ? '#BD0026' : d > 1.1 ? '#E31A1C' : d > 0.8 ? '#FC4E2A' : '#FED976';
+    }
+
+    function updateLegend() {
+        if (legend) map.removeControl(legend);
+        if (currentMode !== 'norm') return;
+
+        legend = L.control({position: 'bottomleft'});
+        legend.onAdd = function () {
+            const div = L.DomUtil.create('div', 'info legend');
+            const grades = [0, 0.8, 1.1, 1.5, 2.0];
+            const labels = ["Low", "Average", "Above Avg", "High", "Significant"];
+            div.innerHTML = '<strong>Interest Intensity</strong><br>';
+            for (let i = 0; i < grades.length; i++) {
+                div.innerHTML += '<i style="background:' + getColor(grades[i] + 0.1) + '"></i> ' + labels[i] + '<br>';
+            }
+            return div;
+        };
+        legend.addTo(map);
     }
 
     function updateDashboard() {
-        const isNormalized = (currentMode === 'norm');
         const activeKeys = Array.from(document.querySelectorAll('#filter-container input:checked')).map(i => i.value);
-        const activeCategories = categories.filter(c => activeKeys.includes(c.key));
-
-        const currentData = selectedMoku ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS) : surveyData;
+        const data = selectedMoku ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS) : surveyData;
         const statePop = mokuFeatures.reduce((acc, curr) => acc + (curr.properties.sum_TOTPOP_CY || 0), 0);
-        
-        if (selectedMoku) {
-            const mPop = selectedMoku.properties.sum_TOTPOP_CY || 1;
-            const mRes = currentData.length;
-            const gap = ((mRes/surveyData.length)*100 - (mPop/statePop)*100).toFixed(2);
-            document.getElementById('moku-title').innerText = selectedMoku.properties.MO_IS;
-            document.getElementById('moku-stats').innerHTML = `${mRes} Responses | Pop: ${mPop.toLocaleString()}<br><b>${gap >= 0 ? '+' : ''}${gap}% Representation Gap</b>`;
-        }
-
         const localPop = selectedMoku ? (selectedMoku.properties.sum_TOTPOP_CY || 1) : statePop;
-        const scalar = isNormalized ? (1000 / localPop) : 1;
 
-        const chartData = activeCategories.map(cat => {
-            const m = (currentData.filter(d => d.attributes[cat.key] === 'Most effective').length * scalar);
-            const s = (currentData.filter(d => d.attributes[cat.key] === 'Somewhat effective').length * scalar);
-            const h = (currentData.filter(d => d.attributes[cat.key] === 'Hardly effective').length * scalar);
-            const offset = -(s / 2);
-            return {
-                most: [offset + s + 0.05, offset + s + m + 0.05], // Slight offset
-                some: [offset, offset + s],
-                hardly: [offset - h - 0.05, offset - 0.05]
-            };
+        // Statistics Display
+        const repRatio = (data.length / localPop).toFixed(6);
+        document.getElementById('moku-title').innerText = selectedMoku ? selectedMoku.properties.MO_IS : "Statewide Overview";
+        document.getElementById('moku-stats').innerHTML = `${data.length.toLocaleString()} Responses | Pop: ${localPop.toLocaleString()}<br><b>1 Response per ${Math.round(localPop/data.length)} People</b>`;
+
+        const chartLabels = categories.filter(c => activeKeys.includes(c.key));
+        const chartDatasets = [
+            { label: 'Most Effective', data: [], backgroundColor: '#2ecc71' },
+            { label: 'Somewhat Effective', data: [], backgroundColor: '#f1c40f' },
+            { label: 'Hardly Effective', data: [], backgroundColor: '#e74c3c' }
+        ];
+
+        chartLabels.forEach(cat => {
+            chartDatasets[0].data.push(data.filter(d => d.attributes[cat.key] === 'Most effective').length);
+            chartDatasets[1].data.push(data.filter(d => d.attributes[cat.key] === 'Somewhat effective').length);
+            chartDatasets[2].data.push(data.filter(d => d.attributes[cat.key] === 'Hardly effective').length);
         });
 
         if (chart) chart.destroy();
         chart = new Chart(document.getElementById('mainChart'), {
             type: 'bar',
-            data: {
-                labels: activeCategories.map(c => c.label),
-                datasets: [
-                    { label: 'Most Effective', data: chartData.map(d => d.most), backgroundColor: '#2ecc71', barThickness: 45 },
-                    { label: 'Somewhat Effective', data: chartData.map(d => d.some), backgroundColor: '#f1c40f', barThickness: 45 },
-                    { label: 'Hardly Effective', data: chartData.map(d => d.hardly), backgroundColor: '#e74c3c', barThickness: 45 }
-                ]
-            },
+            data: { labels: chartLabels.map(c => c.label), datasets: chartDatasets },
             options: {
                 maintainAspectRatio: false,
-                scales: { y: { grid: { color: (c) => c.tick.value === 0 ? '#000' : '#ddd', lineWidth: (c) => c.tick.value === 0 ? 3 : 1 } } },
-                plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${(c.raw[1] - c.raw[0]).toFixed(2)}` } } }
+                scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
+                plugins: {
+                    datalabels: { color: '#000', font: { weight: 'bold' }, formatter: (v) => v > 0 ? v : '' },
+                    legend: { position: 'bottom' }
+                }
             }
         });
 
+        updateLegend();
         geojsonLayer.eachLayer(layer => {
-            const mPop = layer.feature.properties.sum_TOTPOP_CY || 1;
             const mRes = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === layer.feature.properties.MO_IS);
-            
-            // Calculate intensity based only on checked categories
-            let localIntensitySum = 0;
-            activeKeys.forEach(key => {
-                localIntensitySum += mRes.filter(d => d.attributes[key] === 'Most effective').length;
-            });
-
-            const stateIntensity = (surveyData.length / statePop);
-            const intensity = (localIntensitySum / mPop) / stateIntensity;
-
+            let score = 0; activeKeys.forEach(k => score += mRes.filter(d => d.attributes[k] === 'Most effective').length);
+            const intensity = (score / layer.feature.properties.sum_TOTPOP_CY) / (surveyData.length / statePop);
             layer.setStyle({
-                fillColor: isNormalized ? getColor(intensity) : '#3498db',
-                fillOpacity: isNormalized ? 0.8 : 0.2,
-                weight: (selectedMoku && selectedMoku.properties.MO_IS === layer.feature.properties.MO_IS) ? 4 : 1,
-                color: '#2c3e50'
+                fillColor: currentMode === 'norm' ? getColor(intensity) : '#3498db',
+                fillOpacity: currentMode === 'norm' ? 0.8 : 0.2,
+                weight: selectedMoku && selectedMoku.properties.MO_IS === layer.feature.properties.MO_IS ? 4 : 1,
+                color: selectedMoku && selectedMoku.properties.MO_IS === layer.feature.properties.MO_IS ? '#000' : '#2c3e50'
             });
         });
     }
 
-    // Load Data logic remains same as previous functional version...
-    const surveyUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/RHP_SURVEY_-_View_layer_-_no_emails/FeatureServer/0/query?where=1%3D1&outFields=*&f=json";
-    const mokuUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/Moku%20with%20population%20and%20point%20count/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
+    // CLICK OUTSIDE TO RESET
+    map.on('click', (e) => { if (e.originalEvent.target.id === 'map') { selectedMoku = null; updateDashboard(); } });
 
     Promise.all([fetch(surveyUrl).then(r => r.json()), fetch(mokuUrl).then(r => r.json())])
         .then(([sJson, mGeoJson]) => {
-            surveyData = sJson.features;
-            mokuFeatures = mGeoJson.features;
+            surveyData = sJson.features; mokuFeatures = mGeoJson.features;
             geojsonLayer = L.geoJSON(mGeoJson, {
                 onEachFeature: (feature, layer) => {
-                    layer.on('click', () => {
-                        selectedMoku = feature;
-                        updateDashboard();
-                        map.fitBounds(layer.getBounds());
-                    });
+                    layer.on('click', (e) => { L.DomEvent.stopPropagation(e); selectedMoku = feature; updateDashboard(); map.fitBounds(layer.getBounds()); });
                 }
             }).addTo(map);
             setMode('raw');
