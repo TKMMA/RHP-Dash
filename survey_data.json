@@ -1,0 +1,40 @@
+{
+  "categories": [
+    {
+      "label": "Artificial Reefs / Fish Houses",
+      "most": 455,
+      "somewhat": 452,
+      "hardly": 110
+    },
+    {
+      "label": "Out-planting Coral",
+      "most": 457,
+      "somewhat": 423,
+      "hardly": 137
+    },
+    {
+      "label": "Invasive Limu Removal",
+      "most": 336,
+      "somewhat": 470,
+      "hardly": 211
+    },
+    {
+      "label": "Fish Stocking",
+      "most": 510,
+      "somewhat": 372,
+      "hardly": 135
+    },
+    {
+      "label": "Mitigate Roi/Ta'ape/To'au",
+      "most": 624,
+      "somewhat": 297,
+      "hardly": 96
+    },
+    {
+      "label": "Freshwater Runoff Fixes",
+      "most": 685,
+      "somewhat": 248,
+      "hardly": 84
+    }
+  ]
+}
