@@ -11,17 +11,27 @@
         #map { flex: 1; position: relative; }
         #dashboard { width: 550px; padding: 25px; overflow-y: auto; background: white; display: flex; flex-direction: column; border-left: 2px solid #dee2e6; }
         
-        /* New Header Styling */
-        .header-bar { border-bottom: 2px solid #eee; margin-bottom: 20px; padding-bottom: 10px; }
+        /* Floating Header over Map */
+        .map-header {
+            position: absolute;
+            top: 10px;
+            left: 50px; /* Offset from zoom controls */
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.85);
+            padding: 12px 18px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            pointer-events: auto;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
         .header-title { color: #2c3e50; margin: 0; font-size: 1.4rem; font-weight: bold; }
         .header-subtitle { color: #7f8c8d; margin: 2px 0; font-size: 0.95rem; font-weight: bold; }
-        .header-version { color: #7f8c8d; margin: 0; font-size: 0.95rem; font-weight: normal; }
+        .header-version { color: #7f8c8d; margin: 0; font-size: 0.85rem; font-weight: normal; }
         .header-version a { color: #3498db; text-decoration: none; }
 
         .chart-container { height: 600px; margin-top: 10px; position: relative; }
         .controls { background: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid #3498db; }
-        
-        #moku-title { color: #2c3e50; margin: 15px 0 0 0; font-size: 1.4rem; }
+        #moku-title { color: #2c3e50; margin: 0; font-size: 1.4rem; }
         #moku-stats { color: #7f8c8d; margin: 5px 0 10px 0; font-weight: normal; line-height: 1.5; font-size: 0.95rem; }
         
         .filter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding: 10px; background: #fff; border-radius: 6px; border: 1px solid #ddd; }
@@ -29,20 +39,32 @@
         .btn-group button { flex: 1; border: none; padding: 8px; cursor: pointer; border-radius: 6px; font-weight: bold; }
         .btn-group button.active { background: #3498db; color: white; }
         
+        /* Permanent Label Styling */
+        .moku-point-label {
+            background: none !important;
+            border: none !important;
+            box-shadow: none !important;
+            color: #000;
+            font-weight: bold;
+            font-size: 12px;
+            text-shadow: 1px 1px 2px white, -1px -1px 2px white;
+        }
+
         .info.legend { padding: 10px; background: rgba(255,255,255,0.9); box-shadow: 0 0 15px rgba(0,0,0,0.2); border-radius: 5px; line-height: 18px; color: #555; font-size: 0.8rem; }
         .info.legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.8; }
     </style>
 </head>
 <body>
 
-<div id="map"></div>
-<div id="dashboard">
-    <div class="header-bar">
+<div id="map">
+    <div class="map-header">
         <div class="header-title">GFA Dashboard</div>
         <div class="header-subtitle">The Reef Habitat Plan</div>
         <div class="header-version">By TK for DAR | version 3/3/26 | <a href="https://docs.google.com/document/d/1yZgAC0Bs_O5a_DOmwVkMjCMVveab1P2VcyMG6-hPV_Q/edit?usp=sharing" target="_blank">RHP links</a></div>
     </div>
+</div>
 
+<div id="dashboard">
     <h2 id="moku-title">Statewide Overview</h2>
     <h4 id="moku-stats">Connecting to ArcGIS Services...</h4>
     
@@ -63,8 +85,8 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     let chart, surveyData = [], mokuFeatures = [], selectedMoku = null, geojsonLayer = null, currentMode = 'raw', legend = null;
-    
-    // Using live ArcGIS REST URLs
+    let labelLayers = L.layerGroup().addTo(map);
+
     const surveyUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/RHP_SURVEY_-_View_layer_-_no_emails/FeatureServer/0/query?where=1%3D1&outFields=*&f=pjson";
     const mokuUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/Moku%20with%20population%20and%20point%20count/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
 
@@ -125,9 +147,7 @@
         const scalar = isNorm ? (1000 / localPop) : 1;
         const chartLabels = categories.filter(c => activeKeys.includes(c.key));
 
-        // Floating Bar Logic: Keeps "Somewhat" connected and centers it on 0 axis in outlier mode
         const mostData = [], somewhatData = [], hardlyData = [];
-
         chartLabels.forEach(cat => {
             const m = data.filter(d => d.attributes[cat.key] === 'Most effective').length * scalar;
             const s = data.filter(d => d.attributes[cat.key] === 'Somewhat effective').length * scalar;
@@ -206,6 +226,15 @@
         });
     }
 
+    // Toggle Labels based on Zoom
+    map.on('zoomend', function() {
+        if (map.getZoom() < 7) {
+            map.removeLayer(labelLayers);
+        } else {
+            map.addLayer(labelLayers);
+        }
+    });
+
     map.on('click', (e) => { if (e.originalEvent.target.id === 'map') { selectedMoku = null; updateDashboard(); } });
 
     Promise.all([
@@ -214,19 +243,31 @@
     ]).then(([sJson, mGeoJson]) => {
         surveyData = sJson.features; 
         mokuFeatures = mGeoJson.features;
+        
         geojsonLayer = L.geoJSON(mGeoJson, {
             onEachFeature: (feature, layer) => {
                 const name = feature.properties.MO_IS;
                 const count = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === name).length;
                 
-                // Add Hover Labels (Tooltips)
-                layer.bindTooltip(`<b>${name}</b><br>${count} Responses`, { sticky: true, className: 'moku-label' });
+                // 1. Permanent Count Label
+                const center = layer.getBounds().getCenter();
+                const label = L.marker(center, {
+                    icon: L.divIcon({
+                        className: 'moku-point-label',
+                        html: count > 0 ? count : '',
+                        iconSize: [30, 20]
+                    }),
+                    interactive: false
+                });
+                labelLayers.addLayer(label);
+
+                // 2. Hover Strictly MO_IS
+                layer.bindTooltip(`<b>${name}</b>`, { sticky: true });
 
                 layer.on('click', (e) => { 
                     L.DomEvent.stopPropagation(e); 
                     selectedMoku = feature; 
                     updateDashboard(); 
-                    // No automatic zoom per request
                 });
             }
         }).addTo(map);
