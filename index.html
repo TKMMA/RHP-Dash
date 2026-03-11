@@ -6,13 +6,19 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { display: flex; height: 100vh; margin: 0; font-family: -apple-system, sans-serif; background: #f4f7f6; }
-        #map { flex: 1; border-right: 2px solid #ddd; }
+        body { display: flex; height: 100vh; margin: 0; font-family: sans-serif; background: #f8f9fa; }
+        #map { flex: 1; border-right: 2px solid #dee2e6; }
         #dashboard { width: 500px; padding: 25px; overflow-y: auto; background: white; display: flex; flex-direction: column; }
-        .chart-container { flex-grow: 1; min-height: 450px; margin-top: 20px; }
-        h2 { color: #2c3e50; margin: 0 0 10px 0; font-size: 1.5rem; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-        .info-text { font-size: 0.9rem; color: #666; margin-top: 10px; line-height: 1.4; }
+        .chart-container { height: 400px; margin-top: 20px; }
+        .controls { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 10px; }
+        h2 { color: #2c3e50; margin-top: 0; border-bottom: 2px solid #eee; padding-bottom: 10px; }
         .moku-label { background: white; border: 1px solid #999; padding: 2px 5px; border-radius: 4px; font-weight: bold; }
+        .switch { position: relative; display: inline-block; width: 50px; height: 24px; vertical-align: middle; margin-right: 10px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #3498db; }
+        input:checked + .slider:before { transform: translateX(26px); }
     </style>
 </head>
 <body>
@@ -20,22 +26,28 @@
 <div id="map"></div>
 <div id="dashboard">
     <h2 id="moku-title">Statewide Overview</h2>
-    <div id="data-warning" style="display:none; color: #d35400; font-weight: bold; margin-bottom: 10px;">
-        ⚠️ Limited data for this selection. Results may not be representative.
+    
+    <div class="controls">
+        <label class="switch">
+            <input type="checkbox" id="norm-toggle">
+            <span class="slider"></span>
+        </label>
+        <strong>Normalize by Population</strong>
+        <p style="font-size: 0.8rem; margin: 5px 0 0 0;">Toggle to see responses per 1,000 residents.</p>
     </div>
+
     <div class="chart-container"><canvas id="mainChart"></canvas></div>
-    <p class="info-text"><b>Map UX:</b> Click a Moku to highlight the region and filter restoration preferences. Labels show total survey responses per area.</p>
+    <p style="font-size: 0.9rem; color: #666; margin-top: 20px;">
+        Click a Moku on the map to filter. Bars show raw response counts unless normalization is toggled on.
+    </p>
 </div>
 
 <script>
     const map = L.map('map').setView([20.4, -157.4], 7);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    let chart;
-    let surveyData = [];
-    let selectedLayer = null;
-    
-    // API Endpoints from your ArcGIS Services
+    let chart, surveyData = [], mokuFeatures = [], selectedMoku = null, selectedLayer = null;
+
     const surveyUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/RHP_SURVEY_-_View_layer_-_no_emails/FeatureServer/0/query?where=1%3D1&outFields=*&f=json";
     const mokuUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/Moku%20with%20population%20and%20point%20count/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
 
@@ -48,22 +60,29 @@
         { key: 'freshwaterfixes', label: 'Freshwater Fix' }
     ];
 
-    function updateChart(filteredData, title) {
-        const totalCount = filteredData.length;
-        document.getElementById('moku-title').innerText = `${title} (${totalCount} Responses)`;
-        document.getElementById('data-warning').style.display = (totalCount > 0 && totalCount < 10) ? 'block' : 'none';
+    function updateChart() {
+        const isNormalized = document.getElementById('norm-toggle').checked;
+        const dataToProcess = selectedMoku ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS) : surveyData;
+        const title = selectedMoku ? selectedMoku.properties.MO_IS : "Statewide Overview";
+        
+        // Find population (Sum of all mokus if statewide)
+        let pop = 1450000; // default state approx
+        if (selectedMoku) {
+            pop = selectedMoku.properties.sum_TOTPOP_CY || 1;
+        } else {
+            pop = mokuFeatures.reduce((acc, curr) => acc + (curr.properties.sum_TOTPOP_CY || 0), 0);
+        }
 
-        // Calculate Percentages for the 100% Stacked Bar
-        const datasets = { most: [], some: [], hardly: [] };
+        const scalar = isNormalized ? (1000 / pop) : 1;
+        const yAxisLabel = isNormalized ? "Responses per 1,000 Residents" : "Number of Responses";
 
-        categories.forEach(cat => {
-            const catData = filteredData.map(d => d.attributes[cat.key]);
-            const totalValid = catData.filter(v => v).length || 1; // Avoid divide by zero
+        document.getElementById('moku-title').innerText = `${title} (${dataToProcess.length} Responses)`;
 
-            datasets.most.push(((catData.filter(v => v === 'Most effective').length / totalValid) * 100).toFixed(1));
-            datasets.some.push(((catData.filter(v => v === 'Somewhat effective').length / totalValid) * 100).toFixed(1));
-            datasets.hardly.push(((catData.filter(v => v === 'Hardly effective').length / totalValid) * 100).toFixed(1));
-        });
+        const counts = categories.map(cat => ({
+            most: (dataToProcess.filter(d => d.attributes[cat.key] === 'Most effective').length * scalar).toFixed(2),
+            some: (dataToProcess.filter(d => d.attributes[cat.key] === 'Somewhat effective').length * scalar).toFixed(2),
+            hardly: (dataToProcess.filter(d => d.attributes[cat.key] === 'Hardly effective').length * scalar).toFixed(2)
+        }));
 
         const ctx = document.getElementById('mainChart').getContext('2d');
         if (chart) chart.destroy();
@@ -73,9 +92,9 @@
             data: {
                 labels: categories.map(c => c.label),
                 datasets: [
-                    { label: 'Most Effective', data: datasets.most, backgroundColor: '#2ecc71' },
-                    { label: 'Somewhat Effective', data: datasets.some, backgroundColor: '#f1c40f' },
-                    { label: 'Hardly Effective', data: datasets.hardly, backgroundColor: '#e74c3c' }
+                    { label: 'Most Effective', data: counts.map(c => c.most), backgroundColor: '#2ecc71' },
+                    { label: 'Somewhat Effective', data: counts.map(c => c.some), backgroundColor: '#f1c40f' },
+                    { label: 'Hardly Effective', data: counts.map(c => c.hardly), backgroundColor: '#e74c3c' }
                 ]
             },
             options: {
@@ -83,49 +102,39 @@
                 maintainAspectRatio: false,
                 scales: { 
                     x: { stacked: true }, 
-                    y: { 
-                        stacked: true, 
-                        beginAtZero: true, 
-                        max: 100,
-                        title: { display: true, text: 'Percentage of Responses (%)' }
-                    } 
+                    y: { stacked: true, beginAtZero: true, title: { display: true, text: yAxisLabel } } 
                 },
-                plugins: { 
-                    legend: { position: 'bottom' },
-                    tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw}%` } }
-                }
+                plugins: { legend: { position: 'bottom' } }
             }
         });
     }
 
-    // Initialize Dashboard
+    document.getElementById('norm-toggle').addEventListener('change', updateChart);
+
     Promise.all([fetch(surveyUrl).then(r => r.json()), fetch(mokuUrl).then(r => r.json())])
         .then(([sJson, mGeoJson]) => {
             surveyData = sJson.features;
+            mokuFeatures = mGeoJson.features;
             
-            const mokuLayer = L.geoJSON(mGeoJson, {
-                style: { color: '#34495e', weight: 1, fillOpacity: 0.2 },
+            const geojson = L.geoJSON(mGeoJson, {
+                style: { color: '#2c3e50', weight: 1, fillOpacity: 0.1 },
                 onEachFeature: (feature, layer) => {
                     const name = feature.properties.MO_IS;
                     const count = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === name).length;
+                    layer.bindTooltip(`<b>${name}</b><br>${count} Responses`, { direction: "center", className: "moku-label" });
 
-                    // TOOLTIP: Shows count of responses per moku
-                    layer.bindTooltip(`<b>${name}</b><br>${count} Responses`, { direction: 'center', className: 'moku-label' });
-
-                    layer.on('click', (e) => {
-                        // HIGHLIGHT: Reset others, bold the selection
-                        if (selectedLayer) mokuLayer.resetStyle(selectedLayer);
+                    layer.on('click', () => {
+                        if (selectedLayer) geojson.resetStyle(selectedLayer);
                         selectedLayer = layer;
-                        layer.setStyle({ color: '#000', weight: 4, fillOpacity: 0.4 });
-                        
-                        const filtered = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === name);
-                        updateChart(filtered, name);
-                        map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+                        selectedMoku = feature;
+                        layer.setStyle({ color: '#000', weight: 4, fillOpacity: 0.3 });
+                        updateChart();
+                        map.fitBounds(layer.getBounds());
                     });
                 }
             }).addTo(map);
 
-            updateChart(surveyData, "Statewide Overview");
+            updateChart();
         });
 </script>
 </body>
