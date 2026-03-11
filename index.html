@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RHP Diverging Outlier Dashboard</title>
+    <title>GFA Dashboard - RHP</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -10,14 +10,25 @@
         body { display: flex; height: 100vh; margin: 0; font-family: sans-serif; background: #f8f9fa; }
         #map { flex: 1; position: relative; }
         #dashboard { width: 550px; padding: 25px; overflow-y: auto; background: white; display: flex; flex-direction: column; border-left: 2px solid #dee2e6; }
+        
+        /* New Header Styling */
+        .header-bar { border-bottom: 2px solid #eee; margin-bottom: 20px; padding-bottom: 10px; }
+        .header-title { color: #2c3e50; margin: 0; font-size: 1.4rem; font-weight: bold; }
+        .header-subtitle { color: #7f8c8d; margin: 2px 0; font-size: 0.95rem; font-weight: bold; }
+        .header-version { color: #7f8c8d; margin: 0; font-size: 0.95rem; font-weight: normal; }
+        .header-version a { color: #3498db; text-decoration: none; }
+
         .chart-container { height: 600px; margin-top: 10px; position: relative; }
         .controls { background: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid #3498db; }
-        h2 { color: #2c3e50; margin: 0; font-size: 1.4rem; }
-        h4 { color: #7f8c8d; margin: 5px 0 10px 0; font-weight: normal; line-height: 1.5; font-size: 0.95rem; }
+        
+        #moku-title { color: #2c3e50; margin: 15px 0 0 0; font-size: 1.4rem; }
+        #moku-stats { color: #7f8c8d; margin: 5px 0 10px 0; font-weight: normal; line-height: 1.5; font-size: 0.95rem; }
+        
         .filter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding: 10px; background: #fff; border-radius: 6px; border: 1px solid #ddd; }
         .btn-group { display: flex; background: #ddd; padding: 4px; border-radius: 8px; margin-bottom: 10px; }
         .btn-group button { flex: 1; border: none; padding: 8px; cursor: pointer; border-radius: 6px; font-weight: bold; }
         .btn-group button.active { background: #3498db; color: white; }
+        
         .info.legend { padding: 10px; background: rgba(255,255,255,0.9); box-shadow: 0 0 15px rgba(0,0,0,0.2); border-radius: 5px; line-height: 18px; color: #555; font-size: 0.8rem; }
         .info.legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.8; }
     </style>
@@ -26,6 +37,12 @@
 
 <div id="map"></div>
 <div id="dashboard">
+    <div class="header-bar">
+        <div class="header-title">GFA Dashboard</div>
+        <div class="header-subtitle">The Reef Habitat Plan</div>
+        <div class="header-version">By TK for DAR | version 3/3/26 | <a href="https://docs.google.com/document/d/1yZgAC0Bs_O5a_DOmwVkMjCMVveab1P2VcyMG6-hPV_Q/edit?usp=sharing" target="_blank">RHP links</a></div>
+    </div>
+
     <h2 id="moku-title">Statewide Overview</h2>
     <h4 id="moku-stats">Connecting to ArcGIS Services...</h4>
     
@@ -47,6 +64,7 @@
 
     let chart, surveyData = [], mokuFeatures = [], selectedMoku = null, geojsonLayer = null, currentMode = 'raw', legend = null;
     
+    // Using live ArcGIS REST URLs
     const surveyUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/RHP_SURVEY_-_View_layer_-_no_emails/FeatureServer/0/query?where=1%3D1&outFields=*&f=pjson";
     const mokuUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/Moku%20with%20population%20and%20point%20count/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
 
@@ -107,7 +125,7 @@
         const scalar = isNorm ? (1000 / localPop) : 1;
         const chartLabels = categories.filter(c => activeKeys.includes(c.key));
 
-        // Processing for FLOATING BARS to keep Somewhat intact
+        // Floating Bar Logic: Keeps "Somewhat" connected and centers it on 0 axis in outlier mode
         const mostData = [], somewhatData = [], hardlyData = [];
 
         chartLabels.forEach(cat => {
@@ -116,10 +134,10 @@
             const h = data.filter(d => d.attributes[cat.key] === 'Hardly effective').length * scalar;
 
             if (isNorm) {
-                const sMidpointOffset = -(s / 2);
-                hardlyData.push([sMidpointOffset - h, sMidpointOffset]);
-                somewhatData.push([sMidpointOffset, sMidpointOffset + s]);
-                mostData.push([sMidpointOffset + s, sMidpointOffset + s + m]);
+                const sOffset = -(s / 2);
+                hardlyData.push([sOffset - h, sOffset]);
+                somewhatData.push([sOffset, sOffset + s]);
+                mostData.push([sOffset + s, sOffset + s + m]);
             } else {
                 hardlyData.push([0, h]);
                 somewhatData.push([h, h + s]);
@@ -159,7 +177,6 @@
             }
         });
 
-        // Legend/Map Logic
         if (legend) map.removeControl(legend);
         if (isNorm) {
             legend = L.control({position: 'bottomleft'});
@@ -176,14 +193,15 @@
         }
 
         geojsonLayer.eachLayer(layer => {
-            const mRes = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === layer.feature.properties.MO_IS);
+            const mName = layer.feature.properties.MO_IS;
+            const mRes = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === mName);
             let score = 0; activeKeys.forEach(k => score += mRes.filter(d => d.attributes[k] === 'Most effective').length);
             const intensity = (score / layer.feature.properties.sum_TOTPOP_CY) / (surveyData.length / statePop);
             layer.setStyle({
                 fillColor: isNorm ? getColor(intensity) : '#3498db',
                 fillOpacity: isNorm ? 0.8 : 0.2,
-                weight: selectedMoku && selectedMoku.properties.MO_IS === layer.feature.properties.MO_IS ? 4 : 1,
-                color: selectedMoku && selectedMoku.properties.MO_IS === layer.feature.properties.MO_IS ? '#000' : '#2c3e50'
+                weight: selectedMoku && selectedMoku.properties.MO_IS === mName ? 4 : 1,
+                color: selectedMoku && selectedMoku.properties.MO_IS === mName ? '#000' : '#2c3e50'
             });
         });
     }
@@ -198,7 +216,18 @@
         mokuFeatures = mGeoJson.features;
         geojsonLayer = L.geoJSON(mGeoJson, {
             onEachFeature: (feature, layer) => {
-                layer.on('click', (e) => { L.DomEvent.stopPropagation(e); selectedMoku = feature; updateDashboard(); map.fitBounds(layer.getBounds()); });
+                const name = feature.properties.MO_IS;
+                const count = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === name).length;
+                
+                // Add Hover Labels (Tooltips)
+                layer.bindTooltip(`<b>${name}</b><br>${count} Responses`, { sticky: true, className: 'moku-label' });
+
+                layer.on('click', (e) => { 
+                    L.DomEvent.stopPropagation(e); 
+                    selectedMoku = feature; 
+                    updateDashboard(); 
+                    // No automatic zoom per request
+                });
             }
         }).addTo(map);
         updateDashboard();
