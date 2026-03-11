@@ -1,46 +1,44 @@
 GFA Dashboard: The Reef Habitat Plan (v3.3.26)
 
-The GFA (Geographic Focus Area) Dashboard is an exceptionaly niche interactive spatial analysis tool developed by TK for DAR. It serves as a decision-support platform for Goal 3 of the Makai Restoration Action Plans within the broader Hawaiʻi Coral Reef Strategy (HCRS) 2030.
-
-🌊 Project Context
-From July 2024 to April 2025, DAR’s Fisheries Liaison engaged extensively with fishers across all islands through in-person events and social media. This dashboard visualizes the results of a Survey123 that received over 1,000 responses from Hawaiʻi’s nearshore fishing community.
-
-The goal is to translate community input on how and where fish habitat could be improved into a written action plan directly informed by those who know the resource best.
+The GFA Dashboard is an exceptionally niche interactive spatial analysis tool developed by TK for DAR. It visualizes community feedback on reef restoration methods across Hawaiʻi’s Moku (districts), providing decision-makers with raw data and population-adjusted statistical outliers.
 
 🚀 Launch Live Dashboard
-
 📊 Core Features
-1. Dual-View Analysis
-Raw Counts: Visualizes the absolute volume of community feedback. This is essential for identifying areas with high stakeholder engagement.
+1. View Modes
+Raw Counts: Displays the absolute volume of survey responses. This is the primary "heatmap" of community engagement.
 
-Outlier Mode: Adjusts data based on the 2025 Total Population (sum_TOTPOP_CY). This prevents high-population urban centers from overshadowing the voices of smaller, rural fishing communities, allowing managers to see where interest "stands out" per capita.
+Outlier Mode: Normalizes response data against 2025 Total Population (sum_TOTPOP_CY). This identifies areas where community interest is statistically higher or lower than the state average per capita.
 
 2. Statistical Metrics
-Diverging Floating Bars: Charts center on the "Somewhat Effective" category to show sentiment shifts. Bars floating into positive territory indicate a higher-than-average belief in a method's effectiveness relative to the local population.
+Diverging Floating Bars: In Outlier Mode, charts center on the "Somewhat Effective" category.
 
-Representation Gap: A real-time calculation showing if a Moku is over- or under-represented in the survey data compared to its share of the state population.
+Positive Float: High "Most Effective" sentiment relative to population.
 
-Density Ratio: Displays the "1 Response per X People" metric to gauge the statistical "weight" of the local feedback.
+Negative Float: High "Hardly Effective" sentiment relative to population.
+
+Representation Gap: Calculates the percentage point difference between a Moku's share of the state population and its share of the total survey responses.
+
+Density Ratio: Displays the "1 Response per X People" metric to gauge sample depth.
 
 3. Interactive GIS Components
-Static Map Labels: Live response counts sit permanently over each Moku for instant readability.
+Static Map Labels: Live response counts displayed over each Moku polygon.
 
-Restoration Filters: Managers can toggle between six specific methods (e.g., Invasive Limu Removal, Artificial Reefs) to see how priorities shift geographically.
+Dynamic Choropleth: Map coloring in Outlier Mode updates based on which restoration filters (e.g., Art. Reefs, Fish Stocking) are selected.
 
-Hover Discovery: Hover over any polygon to confirm the specific Moku district name.
+Selection Reset: Click any open ocean area on the map to return to the Statewide Overview.
 
 🛠 Technical Architecture
-This is a serverless, live-querying application. It does not use static data files; it fetches live updates directly from DAR's ArcGIS infrastructure.
+This dashboard is a serverless "Live" application. It does not rely on static CSV/JSON files for its data; instead, it queries ArcGIS REST API endpoints directly upon page load.
 
 Mapping Engine: Leaflet.js
 
-Chart Engine: Chart.js
+Chart Engine: Chart.js with the datalabels plugin.
 
-Data Sources: * RHP SURVEY - View layer
+Primary Data Source: RHP SURVEY - View layer
 
-Moku with Population Layer
+Geospatial Source: Moku with population layer
 
-📂 Related Resources
-For more background on the geospatial analysis and project milestones, visit the RHP Links & Resources document.
+📂 Repository Structure
+index.html: Contains the entire application logic (HTML5, CSS3, and JavaScript).
 
-Developed by TK for the State of Hawaiʻi Division of Aquatic Resources.
+survey_data.json: (Legacy/Backup) Contains a hardcoded snapshot of initial survey data. Note: The live dashboard currently bypasses this for the REST API.
