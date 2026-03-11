@@ -18,10 +18,8 @@
         .btn-group { display: flex; background: #ddd; padding: 4px; border-radius: 8px; margin-bottom: 10px; }
         .btn-group button { flex: 1; border: none; padding: 8px; cursor: pointer; border-radius: 6px; font-weight: bold; }
         .btn-group button.active { background: #3498db; color: white; }
-        
-        /* Legend Styling */
-        .info.legend { padding: 10px; background: white; background: rgba(255,255,255,0.9); box-shadow: 0 0 15px rgba(0,0,0,0.2); border-radius: 5px; line-height: 18px; color: #555; }
-        .info.legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
+        .info.legend { padding: 10px; background: rgba(255,255,255,0.9); box-shadow: 0 0 15px rgba(0,0,0,0.2); border-radius: 5px; line-height: 18px; color: #555; }
+        .info.legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.8; }
     </style>
 </head>
 <body>
@@ -29,14 +27,13 @@
 <div id="map"></div>
 <div id="dashboard">
     <h2 id="moku-title">Statewide Overview</h2>
-    <h4 id="moku-stats">Loading Data...</h4>
+    <h4 id="moku-stats">Connecting to ArcGIS Services...</h4>
     
     <div class="controls">
         <div class="btn-group">
             <button id="raw-btn" class="active" onclick="setMode('raw')">Raw Counts</button>
             <button id="norm-btn" onclick="setMode('norm')">Outlier Mode</button>
         </div>
-        <p id="description" style="font-size: 0.85rem; color: #444; margin: 5px 0;">Showing total feedback volume.</p>
         <div id="filter-container" class="filter-group"></div>
     </div>
 
@@ -49,6 +46,11 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     let chart, surveyData = [], mokuFeatures = [], selectedMoku = null, geojsonLayer = null, currentMode = 'raw', legend = null;
+    
+    // Corrected URLs with pjson formatting
+    const surveyUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/RHP_SURVEY_-_View_layer_-_no_emails/FeatureServer/0/query?where=1%3D1&outFields=*&f=pjson";
+    const mokuUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/Moku%20with%20population%20and%20point%20count/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
+
     const categories = [
         { key: 'Artificialreefs', label: 'Art. Reefs' },
         { key: 'Outplanting', label: 'Outplanting' },
@@ -58,7 +60,6 @@
         { key: 'freshwaterfixes', label: 'Freshwater Fix' }
     ];
 
-    // Build Checkboxes
     categories.forEach(cat => {
         const div = document.createElement('div');
         div.innerHTML = `<label><input type="checkbox" checked value="${cat.key}" onchange="updateDashboard()"> ${cat.label}</label>`;
@@ -69,7 +70,6 @@
         currentMode = mode;
         document.getElementById('raw-btn').className = mode === 'raw' ? 'active' : '';
         document.getElementById('norm-btn').className = mode === 'norm' ? 'active' : '';
-        document.getElementById('description').innerText = mode === 'raw' ? "Showing total response volume." : "Colors highlight mokus with higher interest than the state average per capita.";
         updateDashboard();
     }
 
@@ -77,34 +77,19 @@
         return d > 2.0 ? '#800026' : d > 1.5 ? '#BD0026' : d > 1.1 ? '#E31A1C' : d > 0.8 ? '#FC4E2A' : '#FED976';
     }
 
-    function updateLegend() {
-        if (legend) map.removeControl(legend);
-        if (currentMode !== 'norm') return;
-
-        legend = L.control({position: 'bottomleft'});
-        legend.onAdd = function () {
-            const div = L.DomUtil.create('div', 'info legend');
-            const grades = [0, 0.8, 1.1, 1.5, 2.0];
-            const labels = ["Low", "Average", "Above Avg", "High", "Significant"];
-            div.innerHTML = '<strong>Interest Intensity</strong><br>';
-            for (let i = 0; i < grades.length; i++) {
-                div.innerHTML += '<i style="background:' + getColor(grades[i] + 0.1) + '"></i> ' + labels[i] + '<br>';
-            }
-            return div;
-        };
-        legend.addTo(map);
-    }
-
     function updateDashboard() {
+        if (!surveyData.length) return;
+
         const activeKeys = Array.from(document.querySelectorAll('#filter-container input:checked')).map(i => i.value);
         const data = selectedMoku ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS) : surveyData;
         const statePop = mokuFeatures.reduce((acc, curr) => acc + (curr.properties.sum_TOTPOP_CY || 0), 0);
         const localPop = selectedMoku ? (selectedMoku.properties.sum_TOTPOP_CY || 1) : statePop;
 
-        // Statistics Display
-        const repRatio = (data.length / localPop).toFixed(6);
-        document.getElementById('moku-title').innerText = selectedMoku ? selectedMoku.properties.MO_IS : "Statewide Overview";
-        document.getElementById('moku-stats').innerHTML = `${data.length.toLocaleString()} Responses | Pop: ${localPop.toLocaleString()}<br><b>1 Response per ${Math.round(localPop/data.length)} People</b>`;
+        // Header Stats
+        const mName = selectedMoku ? selectedMoku.properties.MO_IS : "Statewide Overview";
+        const resPerCapita = data.length > 0 ? Math.round(localPop / data.length) : 0;
+        document.getElementById('moku-title').innerText = mName;
+        document.getElementById('moku-stats').innerHTML = `${data.length.toLocaleString()} Responses | Pop: ${localPop.toLocaleString()}<br><b>1 Response per ${resPerCapita} People</b>`;
 
         const chartLabels = categories.filter(c => activeKeys.includes(c.key));
         const chartDatasets = [
@@ -127,13 +112,28 @@
                 maintainAspectRatio: false,
                 scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
                 plugins: {
-                    datalabels: { color: '#000', font: { weight: 'bold' }, formatter: (v) => v > 0 ? v : '' },
+                    datalabels: { color: '#000', font: { weight: 'bold' }, formatter: (v) => v > 5 ? v : '' },
                     legend: { position: 'bottom' }
                 }
             }
         });
 
-        updateLegend();
+        // Map Legend and Symbology
+        if (legend) map.removeControl(legend);
+        if (currentMode === 'norm') {
+            legend = L.control({position: 'bottomleft'});
+            legend.onAdd = function () {
+                const div = L.DomUtil.create('div', 'info legend');
+                const grades = [0, 0.8, 1.1, 1.5, 2.0];
+                div.innerHTML = '<strong>Interest Intensity</strong><br>';
+                for (let i = 0; i < grades.length; i++) {
+                    div.innerHTML += '<i style="background:' + getColor(grades[i] + 0.1) + '"></i> ' + (grades[i] === 0 ? 'Low' : grades[i] + 'x') + '<br>';
+                }
+                return div;
+            };
+            legend.addTo(map);
+        }
+
         geojsonLayer.eachLayer(layer => {
             const mRes = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === layer.feature.properties.MO_IS);
             let score = 0; activeKeys.forEach(k => score += mRes.filter(d => d.attributes[k] === 'Most effective').length);
@@ -147,19 +147,34 @@
         });
     }
 
-    // CLICK OUTSIDE TO RESET
-    map.on('click', (e) => { if (e.originalEvent.target.id === 'map') { selectedMoku = null; updateDashboard(); } });
+    // click-outside-to-reset only on the map container
+    map.on('click', (e) => { 
+        if (e.originalEvent.target.id === 'map') { 
+            selectedMoku = null; 
+            updateDashboard(); 
+        } 
+    });
 
-    Promise.all([fetch(surveyUrl).then(r => r.json()), fetch(mokuUrl).then(r => r.json())])
-        .then(([sJson, mGeoJson]) => {
-            surveyData = sJson.features; mokuFeatures = mGeoJson.features;
-            geojsonLayer = L.geoJSON(mGeoJson, {
-                onEachFeature: (feature, layer) => {
-                    layer.on('click', (e) => { L.DomEvent.stopPropagation(e); selectedMoku = feature; updateDashboard(); map.fitBounds(layer.getBounds()); });
-                }
-            }).addTo(map);
-            setMode('raw');
-        });
+    Promise.all([
+        fetch(surveyUrl).then(r => r.json()), 
+        fetch(mokuUrl).then(r => r.json())
+    ]).then(([sJson, mGeoJson]) => {
+        surveyData = sJson.features; 
+        mokuFeatures = mGeoJson.features;
+        geojsonLayer = L.geoJSON(mGeoJson, {
+            onEachFeature: (feature, layer) => {
+                layer.on('click', (e) => { 
+                    L.DomEvent.stopPropagation(e); 
+                    selectedMoku = feature; 
+                    updateDashboard(); 
+                    map.fitBounds(layer.getBounds()); 
+                });
+            }
+        }).addTo(map);
+        updateDashboard();
+    }).catch(err => {
+        document.getElementById('moku-stats').innerText = "Error: Check ArcGIS Service Accessibility.";
+    });
 </script>
 </body>
 </html>
