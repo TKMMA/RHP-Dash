@@ -1,51 +1,81 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RHP Survey Dashboard</title>
+    <title>RHP Dynamic Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: 'Helvetica Neue', sans-serif; padding: 40px; background: #f0f2f5; }
-        .container { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
-        h1 { color: #1a202c; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
+        body { display: flex; height: 100vh; margin: 0; font-family: sans-serif; }
+        #map { flex: 1; border-right: 2px solid #ccc; }
+        #dashboard { width: 450px; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+        .chart-box { height: 300px; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>How can we improve nearshore fish habitat?</h1>
-        <canvas id="mainChart" height="400"></canvas>
-    </div>
 
-    <script>
-        async function buildDashboard() {
-            const response = await fetch('survey_data.json');
-            const raw = await response.json();
-            
-            const labels = raw.categories.map(c => c.label);
-            const most = raw.categories.map(c => c.most);
-            const some = raw.categories.map(c => c.somewhat);
-            const hardly = raw.categories.map(c => c.hardly);
+<div id="map"></div>
+<div id="dashboard">
+    <h2 id="moku-title">Statewide Overview</h2>
+    <div class="chart-box"><canvas id="stackedBar"></canvas></div>
+    <p><i>Click a Moku on the map to filter results</i></p>
+</div>
 
-            new Chart(document.getElementById('mainChart'), {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        { label: 'Most Effective', data: most, backgroundColor: '#2ecc71' },
-                        { label: 'Somewhat Effective', data: some, backgroundColor: '#f1c40f' },
-                        { label: 'Hardly Effective', data: hardly, backgroundColor: '#e74c3c' }
-                    ]
-                },
-                options: {
-                    indexAxis: 'y',
-                    scales: { x: { stacked: true }, y: { stacked: true } },
-                    plugins: { 
-                        legend: { position: 'bottom' },
-                        tooltip: { mode: 'index', intersect: false }
-                    }
+<script>
+    // 1. Setup the Map
+    const map = L.map('map').setView([20.4, -157.4], 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    let chart;
+    const mokuLayerUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/Moku%20with%20population%20and%20point%20count/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
+
+    // 2. Initialize the Chart (Stacked Bar)
+    function initChart(data) {
+        const ctx = document.getElementById('stackedBar').getContext('2d');
+        if (chart) chart.destroy();
+        
+        chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Artificial Reefs'],
+                datasets: [
+                    { label: 'Most', data: [data.most], backgroundColor: '#2ecc71' },
+                    { label: 'Somewhat', data: [data.somewhat], backgroundColor: '#f1c40f' },
+                    { label: 'Hardly', data: [data.hardly], backgroundColor: '#e74c3c' }
+                ]
+            },
+            options: {
+                indexAxis: 'y',
+                scales: { x: { stacked: true, beginAtZero: true }, y: { stacked: true } },
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    }
+
+    // 3. Load Moku Polygons & Add Interaction
+    fetch(mokuLayerUrl)
+        .then(res => res.json())
+        .then(data => {
+            L.geoJSON(data, {
+                style: { color: '#3498db', weight: 2, fillOpacity: 0.2 },
+                onEachFeature: (feature, layer) => {
+                    layer.on('click', () => {
+                        const props = feature.properties;
+                        document.getElementById('moku-title').innerText = props.MO_IS;
+                        
+                        // Use your pre-calculated fields from the JSON tab
+                        initChart({
+                            most: props.reef_most || 0,
+                            somewhat: props.reef_somewhat || 0,
+                            hardly: props.reef_hardly || 0
+                        });
+                    });
                 }
-            });
-        }
-        buildDashboard();
-    </script>
+            }).addTo(map);
+        });
+
+    // Initial Statewide View (Hardcoded based on your PDF totals)
+    initChart({ most: 455, somewhat: 452, hardly: 110 });
+</script>
 </body>
 </html>
