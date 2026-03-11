@@ -85,7 +85,6 @@
         const totalSurveyCount = surveyData.length;
         const localPop = selectedMoku ? (selectedMoku.properties.sum_TOTPOP_CY || 1) : statePop;
 
-        // Header Stats
         const mName = selectedMoku ? selectedMoku.properties.MO_IS : "Statewide Overview";
         const resPerCapita = data.length > 0 ? Math.round(localPop / data.length) : 0;
         
@@ -104,19 +103,12 @@
             `${data.length.toLocaleString()} Responses | Pop: ${localPop.toLocaleString()}<br>` +
             `1 Response per ${resPerCapita.toLocaleString()} People${repText}`;
 
-        const chartLabels = categories.filter(c => activeKeys.includes(c.key));
-        
-        // --- CHART DATA PROCESSING ---
         const isNorm = (currentMode === 'norm');
         const scalar = isNorm ? (1000 / localPop) : 1;
+        const chartLabels = categories.filter(c => activeKeys.includes(c.key));
 
-        // Dataset order: Hardly (bottom), Somewhat, Most (top)
-        const chartDatasets = [
-            { label: 'Hardly Effective', data: [], backgroundColor: '#e74c3c', stack: 's1' },
-            { label: 'Somewhat Effective (Lower)', data: [], backgroundColor: '#f1c40f', stack: 's1', showInLegend: false },
-            { label: 'Somewhat Effective', data: [], backgroundColor: '#f1c40f', stack: 's1' },
-            { label: 'Most Effective', data: [], backgroundColor: '#2ecc71', stack: 's1' }
-        ];
+        // Processing for FLOATING BARS to keep Somewhat intact
+        const mostData = [], somewhatData = [], hardlyData = [];
 
         chartLabels.forEach(cat => {
             const m = data.filter(d => d.attributes[cat.key] === 'Most effective').length * scalar;
@@ -124,47 +116,50 @@
             const h = data.filter(d => d.attributes[cat.key] === 'Hardly effective').length * scalar;
 
             if (isNorm) {
-                chartDatasets[0].data.push(-h);      // Hardly goes down from bottom of somewhat
-                chartDatasets[1].data.push(-s / 2); // Split somewhat below axis
-                chartDatasets[2].data.push(s / 2);  // Split somewhat above axis
-                chartDatasets[3].data.push(m);      // Most grows up from top of somewhat
+                const sMidpointOffset = -(s / 2);
+                hardlyData.push([sMidpointOffset - h, sMidpointOffset]);
+                somewhatData.push([sMidpointOffset, sMidpointOffset + s]);
+                mostData.push([sMidpointOffset + s, sMidpointOffset + s + m]);
             } else {
-                chartDatasets[0].data.push(h);
-                chartDatasets[1].data.push(0);      // Hide lower split in raw mode
-                chartDatasets[2].data.push(s);
-                chartDatasets[3].data.push(m);
+                hardlyData.push([0, h]);
+                somewhatData.push([h, h + s]);
+                mostData.push([h + s, h + s + m]);
             }
         });
 
         if (chart) chart.destroy();
         chart = new Chart(document.getElementById('mainChart'), {
             type: 'bar',
-            data: { labels: chartLabels.map(c => c.label), datasets: chartDatasets },
+            data: {
+                labels: chartLabels.map(c => c.label),
+                datasets: [
+                    { label: 'Hardly Effective', data: hardlyData, backgroundColor: '#e74c3c' },
+                    { label: 'Somewhat Effective', data: somewhatData, backgroundColor: '#f1c40f' },
+                    { label: 'Most Effective', data: mostData, backgroundColor: '#2ecc71' }
+                ]
+            },
             options: {
                 maintainAspectRatio: false,
                 scales: { 
-                    x: { stacked: true }, 
                     y: { 
-                        stacked: true, 
                         beginAtZero: !isNorm,
-                        grid: { color: (c) => c.tick.value === 0 ? '#000' : '#ddd', lineWidth: (c) => c.tick.value === 0 ? 2 : 1 }
+                        grid: { color: (c) => c.tick.value === 0 ? '#000' : '#ddd', lineWidth: (c) => c.tick.value === 0 ? 3 : 1 }
                     } 
                 },
                 plugins: {
                     datalabels: { 
-                        color: '#000', 
-                        font: { weight: 'bold', size: 10 }, 
-                        formatter: (v) => (Math.abs(v) > (isNorm ? 0.05 : 2)) ? Math.abs(v).toFixed(isNorm ? 2 : 0) : '' 
+                        color: '#000', font: { weight: 'bold', size: 10 }, 
+                        formatter: (v) => {
+                            const val = Math.abs(v[1] - v[0]);
+                            return val > (isNorm ? 0.05 : 2) ? val.toFixed(isNorm ? 2 : 0) : '';
+                        }
                     },
-                    legend: { 
-                        position: 'bottom',
-                        labels: { filter: (item) => !item.text.includes('(Lower)') }
-                    }
+                    legend: { position: 'bottom' }
                 }
             }
         });
 
-        // Legend and Map styling
+        // Legend/Map Logic
         if (legend) map.removeControl(legend);
         if (isNorm) {
             legend = L.control({position: 'bottomleft'});
@@ -193,12 +188,7 @@
         });
     }
 
-    map.on('click', (e) => { 
-        if (e.originalEvent.target.id === 'map') { 
-            selectedMoku = null; 
-            updateDashboard(); 
-        } 
-    });
+    map.on('click', (e) => { if (e.originalEvent.target.id === 'map') { selectedMoku = null; updateDashboard(); } });
 
     Promise.all([
         fetch(surveyUrl).then(r => r.json()), 
@@ -208,12 +198,7 @@
         mokuFeatures = mGeoJson.features;
         geojsonLayer = L.geoJSON(mGeoJson, {
             onEachFeature: (feature, layer) => {
-                layer.on('click', (e) => { 
-                    L.DomEvent.stopPropagation(e); 
-                    selectedMoku = feature; 
-                    updateDashboard(); 
-                    map.fitBounds(layer.getBounds()); 
-                });
+                layer.on('click', (e) => { L.DomEvent.stopPropagation(e); selectedMoku = feature; updateDashboard(); map.fitBounds(layer.getBounds()); });
             }
         }).addTo(map);
         updateDashboard();
