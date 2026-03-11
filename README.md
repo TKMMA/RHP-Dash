@@ -1,6 +1,6 @@
 GFA Dashboard: The Reef Habitat Plan (v3.3.26)
 
-The GFA (Geographic Focus Area) Dashboard is an interactive, and exceptionaly niche, spatial analysis tool developed by TK for DAR. It serves as a decision-support platform for Goal 3 of the Makai Restoration Action Plans within the broader Hawaiʻi Coral Reef Strategy (HCRS) 2030.
+The GFA (Geographic Focus Area) Dashboard is an exceptionaly niche interactive spatial analysis tool developed by TK for DAR. It serves as a decision-support platform for Goal 3 of the Makai Restoration Action Plans within the broader Hawaiʻi Coral Reef Strategy (HCRS) 2030.
 
 🌊 Project Context
 From July 2024 to April 2025, DAR’s Fisheries Liaison engaged extensively with fishers across all islands through in-person events and social media. This dashboard visualizes the results of a Survey123 that received over 1,000 responses from Hawaiʻi’s nearshore fishing community.
