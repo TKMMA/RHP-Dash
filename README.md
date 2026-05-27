@@ -2,12 +2,13 @@
 
 The **GFA (Geographic Focus Area) Dashboard** is an exceptionally niche interactive spatial analysis tool developed by TK for DAR. It serves as a decision-support platform for **Goal 3** of the [Makai Restoration Action Plans](https://docs.google.com/document/d/1yZgAC0Bs_O5a_DOmwVkMjCMVveab1P2VcyMG6-hPV_Q/edit?usp=sharing) within the broader [Hawaiʻi Coral Reef Strategy (HCRS) 2030](https://docs.google.com/document/d/1yZgAC0Bs_O5a_DOmwVkMjCMVveab1P2VcyMG6-hPV_Q/edit?usp=sharing).
 
+##  [Launch Dashboard](https://tkmma.github.io/RHP-Dash/)
+
 ## 🌊 Project Context
 From July 2024 to April 2025, DAR’s Fisheries Liaison engaged extensively with fishers across all islands through in-person events and social media. This dashboard visualizes the results of a **Survey123** that received over **1,000 responses** from Hawaiʻi’s nearshore fishing community. 
 
 The goal is to translate community input on **how and where fish habitat could be improved** into a written action plan directly informed by those who know the resource best.
 
-## 🚀 [Launch Live Dashboard](https://tkmma.github.io/RHP-Dash/)
 
 ---
 
