@@ -350,9 +350,11 @@
             data: {
                 labels: chartCats.map(c => c.label),
                 datasets: [
-                    { label: 'Hardly Effective', data: hardlyData, backgroundColor: '#e74c3c' },
-                    { label: 'Somewhat Effective', data: somewhatData, backgroundColor: '#f1c40f' },
-                    { label: 'Most Effective', data: mostData, backgroundColor: '#2ecc71' }
+                    // grouped:false overlaps the three segments on one column (no side-by-side
+                    // stepping); their float [start,end] ranges keep the diverging positions.
+                    { label: 'Hardly Effective', data: hardlyData, backgroundColor: '#e74c3c', grouped: false },
+                    { label: 'Somewhat Effective', data: somewhatData, backgroundColor: '#f1c40f', grouped: false },
+                    { label: 'Most Effective', data: mostData, backgroundColor: '#2ecc71', grouped: false }
                 ]
             },
             options: {
