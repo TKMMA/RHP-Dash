@@ -43,8 +43,10 @@
         .filter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding: 10px; background: #fff; border-radius: 6px; border: 1px solid #ddd; }
         .filter-hint { grid-column: 1 / -1; margin: 2px 0 0 0; font-size: 0.75rem; color: #95a5a6; font-style: italic; }
         .btn-group { display: flex; background: #ddd; padding: 4px; border-radius: 8px; margin-bottom: 10px; }
-        .btn-group button { flex: 1; border: none; padding: 8px; cursor: help; border-radius: 6px; font-weight: bold; font-size: 0.85rem; }
+        .btn-group button { flex: 1; border: none; padding: 8px; cursor: pointer; border-radius: 6px; font-weight: bold; font-size: 0.85rem; }
         .btn-group button.active { background: #3498db; color: white; cursor: default; }
+        .mode-desc { margin: 0 0 10px 0; padding: 9px 12px; background: #fff; border-radius: 6px; border-left: 4px solid #3498db; font-size: 0.82rem; color: #555; line-height: 1.45; }
+        .mode-desc b { color: #2c3e50; }
 
         .moku-point-label {
             background: none !important; border: none !important; box-shadow: none !important;
@@ -72,10 +74,11 @@
 
     <div class="controls">
         <div class="btn-group">
-            <button id="responses-btn" class="active" onclick="setMode('responses')" title="RESPONSES: Absolute volume of feedback. Darker blue = more responses. Answers 'where did people engage the most?'">Responses</button>
-            <button id="participation-btn" onclick="setMode('participation')" title="PARTICIPATION: Responses per capita vs. the statewide rate (a location quotient centered on 1.0). Blue = a Moku speaks up MORE than its population share; red = less. Districts with too few residents or responses are greyed out.">Participation</button>
-            <button id="sentiment-btn" onclick="setMode('sentiment')" title="SENTIMENT: Average favorability toward the selected methods, smoothed for small samples (Empirical-Bayes shrinkage toward the state mean). Blue = rates methods as more effective than the statewide average; red = less.">Sentiment</button>
+            <button id="responses-btn" class="active" onclick="setMode('responses')">Responses</button>
+            <button id="participation-btn" onclick="setMode('participation')">Participation</button>
+            <button id="sentiment-btn" onclick="setMode('sentiment')">Sentiment</button>
         </div>
+        <p id="mode-desc" class="mode-desc"></p>
         <div id="filter-container" class="filter-group"></div>
     </div>
 
@@ -140,6 +143,13 @@
     hint.className = 'filter-hint';
     hint.textContent = 'Filters affect Sentiment and the chart (Responses & Participation count all feedback).';
     document.getElementById('filter-container').appendChild(hint);
+
+    // Descriptions shown under the toggle for the active view (previously hover tooltips).
+    const MODE_DESC = {
+        responses: '<b>Responses</b> — the absolute volume of feedback. Darker blue = more responses. Answers <i>"where did the community engage the most?"</i> Not affected by the method filters.',
+        participation: '<b>Participation</b> — responses per capita vs. the statewide rate (a location quotient centered on 1.0). <b style="color:#08306b">Blue</b> = this Moku speaks up <i>more</i> than its share of state population; <b style="color:#cb181d">red</b> = less. Districts with too few residents or responses are greyed out. Not affected by the method filters.',
+        sentiment: '<b>Sentiment</b> — average favorability toward the <i>selected</i> methods, smoothed for small samples (Empirical-Bayes shrinkage toward the state mean). <b style="color:#08306b">Blue</b> = rates the methods <i>more</i> effective than the statewide average; <b style="color:#cb181d">red</b> = less.'
+    };
 
     function setMode(mode) {
         currentMode = mode;
@@ -210,9 +220,15 @@
     }
 
     // Statewide mean favorability (0..1) for the active methods = shrinkage target.
+    // Computed over ALL responses that answered (the ~1,017 opinion-bearing set),
+    // not just the ~990 that named a Moku — this matches the opinion chart and keeps
+    // the ~27 responses that rated methods but gave no location. Blanks are ignored.
     function stateMeanSentiment(keys) {
         let sum = 0, cnt = 0;
-        Object.values(mokuAgg).forEach(a => { const s = scoreOf(a.byKey, keys); sum += s.sum; cnt += s.cnt; });
+        surveyData.forEach(d => keys.forEach(k => {
+            const v = SCORE[d.attributes[k]];
+            if (v !== undefined) { sum += v; cnt++; }
+        }));
         return cnt ? sum / cnt : 0;
     }
 
@@ -232,6 +248,7 @@
 
         const activeKeys = Array.from(document.querySelectorAll('#filter-container input:checked')).map(i => i.value);
         const mu = stateMeanSentiment(activeKeys); // statewide favorability baseline
+        document.getElementById('mode-desc').innerHTML = MODE_DESC[currentMode];
 
         // ----- Selected scope (a Moku, or statewide) -----
         const scope = selectedMoku
