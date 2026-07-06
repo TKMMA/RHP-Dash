@@ -34,6 +34,12 @@
         .header-version a { color: #3498db; text-decoration: none; }
 
         .chart-container { height: 600px; margin-top: 10px; position: relative; }
+        .chart-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+        .btn-group-sm { margin-bottom: 0; }
+        .btn-group-sm button { flex: 0 0 auto; padding: 6px 12px; font-size: 0.8rem; cursor: pointer; }
+        .tool-btn { border: 1px solid #ccc; background: #fff; padding: 7px 12px; border-radius: 6px; font-weight: bold; font-size: 0.8rem; cursor: pointer; color: #2c3e50; white-space: nowrap; }
+        .tool-btn:hover { background: #f1f3f5; }
+        .tool-btn.stale { background: #3498db; color: #fff; border-color: #3498db; }
         .controls { background: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid #3498db; }
         #moku-title { color: #2c3e50; margin: 0; font-size: 1.4rem; }
         #moku-stats { color: #7f8c8d; margin: 5px 0 10px 0; font-weight: normal; line-height: 1.5; font-size: 0.95rem; }
@@ -82,6 +88,13 @@
         <div id="filter-container" class="filter-group"></div>
     </div>
 
+    <div class="chart-toolbar">
+        <div class="btn-group btn-group-sm">
+            <button id="unstep-btn" class="active" onclick="setBarMode('unstep')" title="Single column: the three ratings overlap on one column.">Single Column</button>
+            <button id="step-btn" onclick="setBarMode('step')" title="Stepped: the three ratings sit side-by-side like a staircase.">Stepped</button>
+        </div>
+        <button id="sort-btn" class="tool-btn" onclick="sortMethods()" title="Order the methods along the x-axis by net favorability (% Most − % Hardly) for the current view.">⇅ Sorted by ranking</button>
+    </div>
     <div class="chart-container"><canvas id="mainChart"></canvas></div>
 </div>
 
@@ -113,6 +126,8 @@
 
     let chart, surveyData = [], mokuFeatures = [], selectedMoku = null,
         geojsonLayer = null, currentMode = 'responses', legend = null;
+    let barMode = 'unstep';   // 'unstep' = one overlapping column | 'step' = side-by-side staircase
+    let methodOrder = null;   // x-axis order of method keys; set to the statewide ranking on load
     let labelLayers = L.layerGroup().addTo(map);
 
     // Precomputed aggregates (built once on load).
@@ -155,6 +170,50 @@
         currentMode = mode;
         ['responses', 'participation', 'sentiment'].forEach(m =>
             document.getElementById(m + '-btn').className = (m === mode) ? 'active' : '');
+        updateDashboard();
+    }
+
+    function setBarMode(mode) {
+        barMode = mode;
+        ['unstep', 'step'].forEach(m =>
+            document.getElementById(m + '-btn').className = (m === mode) ? 'active' : '');
+        updateDashboard();
+    }
+
+    // ---------------------------------------------------------------------
+    //  X-axis ordering: rank methods by NET FAVORABILITY (% Most − % Hardly).
+    // ---------------------------------------------------------------------
+    // Responses for the current scope (a selected Moku, or statewide).
+    function scopeData() {
+        return selectedMoku
+            ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS)
+            : surveyData;
+    }
+    // Net-favorable score for one method over a response set: (#Most − #Hardly) / #rated.
+    function netScore(data, key) {
+        let m = 0, h = 0, n = 0;
+        data.forEach(d => {
+            const v = d.attributes[key];
+            if (v === 'Most effective') { m++; n++; }
+            else if (v === 'Somewhat effective') { n++; }
+            else if (v === 'Hardly effective') { h++; n++; }
+        });
+        return n ? (m - h) / n : 0;
+    }
+    // Order the given keys by net favorability, most-favored first (stable on ties).
+    function rankMethods(data, keys) {
+        const score = {};
+        keys.forEach(k => score[k] = netScore(data, k));
+        return [...keys].sort((a, b) => score[b] - score[a]);
+    }
+    // True when the visible bars are NOT in this scope's ranked order (sort is "stale").
+    function isSortStale(activeKeys) {
+        const visible = (methodOrder || categories.map(c => c.key)).filter(k => activeKeys.includes(k));
+        return visible.join('|') !== rankMethods(scopeData(), visible).join('|');
+    }
+    // Sort button: re-rank the x-axis to the CURRENT view's data.
+    function sortMethods() {
+        methodOrder = rankMethods(scopeData(), categories.map(c => c.key));
         updateDashboard();
     }
 
@@ -293,6 +352,12 @@
         renderChart(activeKeys);
         renderLegend(mu);
 
+        // Sort button reflects whether re-ranking would reorder the current view.
+        const stale = isSortStale(activeKeys);
+        const sortBtn = document.getElementById('sort-btn');
+        sortBtn.classList.toggle('stale', stale);
+        sortBtn.innerHTML = stale ? '↻ Re-sort for this view' : '⇅ Sorted by ranking';
+
         // ----- Choropleth -----
         geojsonLayer.eachLayer(layer => {
             const name = layer.feature.properties.MO_IS;
@@ -326,10 +391,10 @@
     //  right are net-favored, methods leaning left are net-doubted.
     // ---------------------------------------------------------------------
     function renderChart(activeKeys) {
-        const data = selectedMoku
-            ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS)
-            : surveyData;
-        const chartCats = categories.filter(c => activeKeys.includes(c.key));
+        const data = scopeData();
+        const order = methodOrder || categories.map(c => c.key);
+        const chartCats = order.filter(k => activeKeys.includes(k)).map(k => categories.find(c => c.key === k));
+        const grouped = (barMode === 'step');
         const mostData = [], somewhatData = [], hardlyData = [];
 
         chartCats.forEach(cat => {
@@ -350,11 +415,11 @@
             data: {
                 labels: chartCats.map(c => c.label),
                 datasets: [
-                    // grouped:false overlaps the three segments on one column (no side-by-side
-                    // stepping); their float [start,end] ranges keep the diverging positions.
-                    { label: 'Hardly Effective', data: hardlyData, backgroundColor: '#e74c3c', grouped: false },
-                    { label: 'Somewhat Effective', data: somewhatData, backgroundColor: '#f1c40f', grouped: false },
-                    { label: 'Most Effective', data: mostData, backgroundColor: '#2ecc71', grouped: false }
+                    // grouped:false overlaps the three segments on one column; grouped:true steps
+                    // them side-by-side. Their float [start,end] ranges keep the diverging positions.
+                    { label: 'Hardly Effective', data: hardlyData, backgroundColor: '#e74c3c', grouped },
+                    { label: 'Somewhat Effective', data: somewhatData, backgroundColor: '#f1c40f', grouped },
+                    { label: 'Most Effective', data: mostData, backgroundColor: '#2ecc71', grouped }
                 ]
             },
             options: {
@@ -416,6 +481,7 @@
             surveyData = sJson.features;
             mokuFeatures = mGeoJson.features;
             buildAggregates();
+            methodOrder = rankMethods(surveyData, categories.map(c => c.key)); // default: sorted statewide
 
             geojsonLayer = L.geoJSON(mGeoJson, {
                 onEachFeature: (feature, layer) => {
