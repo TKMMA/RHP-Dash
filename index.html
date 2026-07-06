@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="utf-8" />
     <title>GFA Dashboard - RHP</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -10,7 +11,7 @@
         body { display: flex; height: 100vh; margin: 0; font-family: sans-serif; background: #f8f9fa; }
         #map { flex: 1; position: relative; background: #fdfdfd; }
         #dashboard { width: 550px; padding: 25px; overflow-y: auto; background: white; display: flex; flex-direction: column; border-left: 2px solid #dee2e6; }
-        
+
         /* Centered Compact Header */
         .map-header {
             position: absolute;
@@ -36,12 +37,15 @@
         .controls { background: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid #3498db; }
         #moku-title { color: #2c3e50; margin: 0; font-size: 1.4rem; }
         #moku-stats { color: #7f8c8d; margin: 5px 0 10px 0; font-weight: normal; line-height: 1.5; font-size: 0.95rem; }
-        
+        #moku-stats .metric { color: #2c3e50; font-weight: bold; }
+        #moku-stats .caveat { color: #c0392b; font-weight: bold; }
+
         .filter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding: 10px; background: #fff; border-radius: 6px; border: 1px solid #ddd; }
+        .filter-hint { grid-column: 1 / -1; margin: 2px 0 0 0; font-size: 0.75rem; color: #95a5a6; font-style: italic; }
         .btn-group { display: flex; background: #ddd; padding: 4px; border-radius: 8px; margin-bottom: 10px; }
-        .btn-group button { flex: 1; border: none; padding: 8px; cursor: help; border-radius: 6px; font-weight: bold; }
+        .btn-group button { flex: 1; border: none; padding: 8px; cursor: help; border-radius: 6px; font-weight: bold; font-size: 0.85rem; }
         .btn-group button.active { background: #3498db; color: white; cursor: default; }
-        
+
         .moku-point-label {
             background: none !important; border: none !important; box-shadow: none !important;
             color: #000; font-weight: bold; font-size: 12px;
@@ -49,7 +53,7 @@
         }
 
         .info.legend { padding: 10px; background: rgba(255,255,255,0.9); box-shadow: 0 0 15px rgba(0,0,0,0.2); border-radius: 5px; line-height: 18px; color: #555; font-size: 0.8rem; }
-        .info.legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.8; }
+        .info.legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.85; }
     </style>
 </head>
 <body>
@@ -58,18 +62,19 @@
     <div class="map-header">
         <span class="header-title">GFA Dashboard</span>
         <span class="header-subtitle">The Reef Habitat Plan</span>
-        <div class="header-version">By TK for DAR | <a href="https://docs.google.com/document/d/1yZgAC0Bs_O5a_DOmwVkMjCMVveab1P2VcyMG6-hPV_Q/edit?usp=sharing" target="_blank">RHP links</a> | <a href="https://github.com/TKMMA/RHP-Dash" target="_blank">README & Github Repo</a> | version 3/11/26</div>
+        <div class="header-version">By TK for DAR | <a href="https://docs.google.com/document/d/1yZgAC0Bs_O5a_DOmwVkMjCMVveab1P2VcyMG6-hPV_Q/edit?usp=sharing" target="_blank">RHP links</a> | <a href="https://github.com/TKMMA/RHP-Dash" target="_blank">README &amp; Github Repo</a> | v4.0 &middot; 7/6/26</div>
     </div>
 </div>
 
 <div id="dashboard">
     <h2 id="moku-title">Statewide Overview</h2>
     <h4 id="moku-stats">Connecting to ArcGIS Services...</h4>
-    
+
     <div class="controls">
         <div class="btn-group">
-            <button id="raw-btn" class="active" onclick="setMode('raw')" title="RAW MODE: Displays absolute response counts as a heatmap. Darker blue indicates higher community engagement.">Raw Counts</button>
-            <button id="norm-btn" onclick="setMode('norm')" title="OUTLIER MODE: Normalizes data by population. Red highlights where community interest stands out relative to the number of residents.">Outlier Mode</button>
+            <button id="responses-btn" class="active" onclick="setMode('responses')" title="RESPONSES: Absolute volume of feedback. Darker blue = more responses. Answers 'where did people engage the most?'">Responses</button>
+            <button id="participation-btn" onclick="setMode('participation')" title="PARTICIPATION: Responses per capita vs. the statewide rate (a location quotient centered on 1.0). Blue = a Moku speaks up MORE than its population share; red = less. Districts with too few residents or responses are greyed out.">Participation</button>
+            <button id="sentiment-btn" onclick="setMode('sentiment')" title="SENTIMENT: Average favorability toward the selected methods, smoothed for small samples (Empirical-Bayes shrinkage toward the state mean). Blue = rates methods as more effective than the statewide average; red = less.">Sentiment</button>
         </div>
         <div id="filter-container" class="filter-group"></div>
     </div>
@@ -80,14 +85,37 @@
 <script>
     Chart.register(ChartDataLabels);
     const map = L.map('map').setView([20.4, -157.4], 7);
-    
-    // Switch to CartoDB Positron for a cleaner, non-distracting look
+
+    // CartoDB Positron for a clean, non-distracting basemap
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; CartoDB'
     }).addTo(map);
 
-    let chart, surveyData = [], mokuFeatures = [], selectedMoku = null, geojsonLayer = null, currentMode = 'raw', legend = null;
+    // ---------------------------------------------------------------------
+    //  Tunable statistical parameters (documented for reviewers)
+    // ---------------------------------------------------------------------
+    // PARTICIPATION: a per-capita rate is meaningless when the denominator is
+    // tiny, so Moku below these floors are shown as "insufficient data" (grey)
+    // instead of being painted a false extreme. (e.g. Kahoʻolawe has 0 residents,
+    // Koʻolau-Lānaʻi has 13 — a single response there is not a signal.)
+    const MIN_POP = 500;      // minimum residents to compute a per-capita rate
+    const MIN_RESP = 5;       // minimum responses to compute participation
+    // SENTIMENT: Empirical-Bayes shrinkage strength, in "respondent-equivalents".
+    // A Moku's mean favorability is pulled toward the statewide mean; the pull is
+    // strong when few people responded and negligible when many did. K≈8 means a
+    // Moku with 8 responses sits halfway between its own mean and the state mean.
+    const SHRINK_K = 8;
+    // Ordinal -> numeric scores for the 3-level effectiveness scale.
+    const SCORE = { 'Most effective': 1, 'Somewhat effective': 0.5, 'Hardly effective': 0 };
+
+    let chart, surveyData = [], mokuFeatures = [], selectedMoku = null,
+        geojsonLayer = null, currentMode = 'responses', legend = null;
     let labelLayers = L.layerGroup().addTo(map);
+
+    // Precomputed aggregates (built once on load).
+    let mokuAgg = {};         // MO_IS -> { name, pop, n, byKey:{ key:{most,somewhat,hardly} } }
+    let statePop = 0;         // sum of Moku populations
+    let totalMapped = 0;      // responses that mapped to a Moku (LQ denominator)
 
     const surveyUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/RHP_SURVEY_-_View_layer_-_no_emails/FeatureServer/0/query?where=1%3D1&outFields=*&f=pjson";
     const mokuUrl = "https://services.arcgis.com/HQ0xoN0EzDPBOEci/ArcGIS/rest/services/Moku%20with%20population%20and%20point%20count/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
@@ -106,59 +134,204 @@
         div.innerHTML = `<label><input type="checkbox" checked value="${cat.key}" onchange="updateDashboard()"> ${cat.label}</label>`;
         document.getElementById('filter-container').appendChild(div);
     });
+    // Filters only change method-specific views; a "response" is one response
+    // regardless of method, so Responses/Participation maps ignore the filters.
+    const hint = document.createElement('p');
+    hint.className = 'filter-hint';
+    hint.textContent = 'Filters affect Sentiment and the chart (Responses & Participation count all feedback).';
+    document.getElementById('filter-container').appendChild(hint);
 
     function setMode(mode) {
         currentMode = mode;
-        document.getElementById('raw-btn').className = mode === 'raw' ? 'active' : '';
-        document.getElementById('norm-btn').className = mode === 'norm' ? 'active' : '';
+        ['responses', 'participation', 'sentiment'].forEach(m =>
+            document.getElementById(m + '-btn').className = (m === mode) ? 'active' : '');
         updateDashboard();
     }
 
-    // Color Ramps
-    function getOutlierColor(d) {
-        return d > 2.0 ? '#800026' : d > 1.5 ? '#BD0026' : d > 1.1 ? '#E31A1C' : d > 0.8 ? '#FC4E2A' : '#FED976';
-    }
+    // ---------------------------------------------------------------------
+    //  Color ramps
+    // ---------------------------------------------------------------------
+    // Sequential blue: absolute response volume.
     function getRawColor(d) {
         return d > 100 ? '#084594' : d > 50 ? '#2171b5' : d > 20 ? '#4292c6' : d > 5 ? '#9ecae1' : '#eff3ff';
     }
+    // Diverging: participation location quotient, centered on 1.0 (z = log2(LQ)).
+    // Blue = over-represented voice, red = under-represented.
+    function getParticipationColor(lq) {
+        const z = Math.log2(lq);
+        return z > 0.75 ? '#08306b' : z > 0.25 ? '#4292c6' : z > -0.25 ? '#f7f7f7' : z > -0.75 ? '#fb6a4a' : '#cb181d';
+    }
+    // Diverging: sentiment deviation from the statewide mean favorability.
+    // Blue = rates methods higher than average, red = lower.
+    function getSentimentColor(dev) {
+        return dev > 0.10 ? '#08306b' : dev > 0.03 ? '#4292c6' : dev > -0.03 ? '#f7f7f7' : dev > -0.10 ? '#fb6a4a' : '#cb181d';
+    }
+    const GREY = '#cccccc'; // insufficient data
 
+    // ---------------------------------------------------------------------
+    //  Aggregation helpers
+    // ---------------------------------------------------------------------
+    function buildAggregates() {
+        mokuAgg = {};
+        mokuFeatures.forEach(f => {
+            const p = f.properties;
+            mokuAgg[p.MO_IS] = {
+                name: p.MO_IS,
+                pop: p.sum_TOTPOP_CY || 0,
+                n: 0,
+                byKey: Object.fromEntries(categories.map(c => [c.key, { most: 0, somewhat: 0, hardly: 0 }]))
+            };
+        });
+        surveyData.forEach(d => {
+            const a = mokuAgg[d.attributes.MOKUSELECTED_where_do_you_restr];
+            if (!a) return; // response did not map to a known Moku
+            a.n++;
+            categories.forEach(c => {
+                const v = d.attributes[c.key];
+                if (v === 'Most effective') a.byKey[c.key].most++;
+                else if (v === 'Somewhat effective') a.byKey[c.key].somewhat++;
+                else if (v === 'Hardly effective') a.byKey[c.key].hardly++;
+            });
+        });
+        statePop = mokuFeatures.reduce((s, f) => s + (f.properties.sum_TOTPOP_CY || 0), 0);
+        totalMapped = Object.values(mokuAgg).reduce((s, a) => s + a.n, 0);
+    }
+
+    // Sum of ordinal scores and number of ratings across the active methods.
+    function scoreOf(byKey, keys) {
+        let sum = 0, cnt = 0;
+        keys.forEach(k => {
+            const b = byKey[k];
+            if (!b) return;
+            sum += b.most * SCORE['Most effective'] + b.somewhat * SCORE['Somewhat effective'] + b.hardly * SCORE['Hardly effective'];
+            cnt += b.most + b.somewhat + b.hardly;
+        });
+        return { sum, cnt };
+    }
+
+    // Statewide mean favorability (0..1) for the active methods = shrinkage target.
+    function stateMeanSentiment(keys) {
+        let sum = 0, cnt = 0;
+        Object.values(mokuAgg).forEach(a => { const s = scoreOf(a.byKey, keys); sum += s.sum; cnt += s.cnt; });
+        return cnt ? sum / cnt : 0;
+    }
+
+    // Empirical-Bayes shrunk favorability for one Moku toward the state mean mu.
+    function shrunkSentiment(byKey, keys, mu) {
+        const s = scoreOf(byKey, keys);
+        if (!s.cnt) return null;
+        const Kr = SHRINK_K * keys.length; // K expressed in ratings, matching s.cnt
+        return (s.sum + Kr * mu) / (s.cnt + Kr);
+    }
+
+    // ---------------------------------------------------------------------
+    //  Main render
+    // ---------------------------------------------------------------------
     function updateDashboard() {
         if (!surveyData.length || !mokuFeatures.length) return;
 
-        const isNorm = (currentMode === 'norm');
         const activeKeys = Array.from(document.querySelectorAll('#filter-container input:checked')).map(i => i.value);
-        const data = selectedMoku ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS) : surveyData;
-        const statePop = mokuFeatures.reduce((acc, curr) => acc + (curr.properties.sum_TOTPOP_CY || 0), 0);
-        const totalSurveyCount = surveyData.length;
-        const localPop = selectedMoku ? (selectedMoku.properties.sum_TOTPOP_CY || 1) : statePop;
+        const mu = stateMeanSentiment(activeKeys); // statewide favorability baseline
 
-        const mName = selectedMoku ? selectedMoku.properties.MO_IS : "Statewide Overview";
-        const resPerCapita = data.length > 0 ? Math.round(localPop / data.length) : 0;
-        
-        let repText = selectedMoku ? `<br><b>${(((data.length / totalSurveyCount)*100) - ((localPop / statePop)*100)).toFixed(2)}% Representation Gap</b>` : `<br><b>Baseline: 100% of State Population</b>`;
-        document.getElementById('moku-title').innerText = mName;
-        document.getElementById('moku-stats').innerHTML = `${data.length.toLocaleString()} Responses | Pop: ${localPop.toLocaleString()}<br>1 Response per ${resPerCapita.toLocaleString()} People${repText}`;
+        // ----- Selected scope (a Moku, or statewide) -----
+        const scope = selectedMoku
+            ? mokuAgg[selectedMoku.properties.MO_IS]
+            : { name: 'Statewide Overview', pop: statePop, n: totalMapped, byKey: null };
 
-        // Chart Logic
-        const scalar = isNorm ? (1000 / localPop) : 1;
-        const chartLabels = categories.filter(c => activeKeys.includes(c.key));
+        const respShare = totalMapped ? scope.n / totalMapped : 0;
+        const popShare = statePop ? scope.pop / statePop : 0;
+        const density = scope.n > 0 ? Math.round(scope.pop / scope.n) : null;
+
+        // Sentiment for the panel: shrink a Moku, or report the state mean itself.
+        const scopeSent = selectedMoku ? shrunkSentiment(scope.byKey, activeKeys, mu) : mu;
+
+        document.getElementById('moku-title').innerText = scope.name;
+
+        let statsHtml = `<span class="metric">${scope.n.toLocaleString()}</span> Responses | `
+            + `Pop: <span class="metric">${scope.pop.toLocaleString()}</span>`
+            + (density !== null ? ` | 1 per <span class="metric">${density.toLocaleString()}</span>` : '');
+
+        if (selectedMoku) {
+            const gapNum = (respShare - popShare) * 100;
+            const gap = `${gapNum >= 0 ? '+' : ''}${gapNum.toFixed(1)} pts ${gapNum >= 0 ? 'over' : 'under'}-represented`;
+            // Only show the per-capita ratio when it is statistically stable (same
+            // floors as the map); otherwise it explodes on a tiny denominator.
+            const partOk = scope.pop >= MIN_POP && scope.n >= MIN_RESP;
+            const lq = popShare > 0 ? (respShare / popShare) : null;
+            statsHtml += `<br>Participation: `
+                + (partOk && lq !== null
+                    ? `<span class="metric">${lq.toFixed(2)}×</span> its population share (${gap})`
+                    : `<span class="metric">${gap}</span> <span style="color:#95a5a6">(population/sample too small for a reliable per-capita ratio)</span>`);
+            statsHtml += `<br>Sentiment: `
+                + (scopeSent !== null
+                    ? `<span class="metric">${(scopeSent * 100).toFixed(0)}%</span> favorable vs. <span class="metric">${(mu * 100).toFixed(0)}%</span> statewide`
+                    : `<span class="metric">no responses</span>`);
+            if (scope.n < MIN_RESP) statsHtml += `<br><span class="caveat">⚠ Small sample (n=${scope.n}) — interpret with care.</span>`;
+        } else {
+            statsHtml += `<br><span class="metric">Statewide baseline</span> — `
+                + `${(mu * 100).toFixed(0)}% average favorability across ${activeKeys.length} selected method${activeKeys.length === 1 ? '' : 's'}.`;
+        }
+        document.getElementById('moku-stats').innerHTML = statsHtml;
+
+        renderChart(activeKeys);
+        renderLegend(mu);
+
+        // ----- Choropleth -----
+        geojsonLayer.eachLayer(layer => {
+            const name = layer.feature.properties.MO_IS;
+            const a = mokuAgg[name];
+            let fill = GREY;
+
+            if (a) {
+                if (currentMode === 'responses') {
+                    fill = getRawColor(a.n);
+                } else if (currentMode === 'participation') {
+                    const ok = a.pop >= MIN_POP && a.n >= MIN_RESP;
+                    if (ok) fill = getParticipationColor((a.n / totalMapped) / (a.pop / statePop));
+                } else { // sentiment
+                    const s = shrunkSentiment(a.byKey, activeKeys, mu);
+                    if (s !== null) fill = getSentimentColor(s - mu);
+                }
+            }
+            const isSel = selectedMoku && selectedMoku.properties.MO_IS === name;
+            layer.setStyle({
+                fillColor: fill,
+                fillOpacity: 0.85,
+                weight: isSel ? 4 : 1,
+                color: isSel ? '#000' : '#2c3e50'
+            });
+        });
+    }
+
+    // ---------------------------------------------------------------------
+    //  Chart: diverging (Likert) breakdown of opinion, as % of respondents.
+    //  Zero sits at the midpoint of "Somewhat effective"; methods leaning
+    //  right are net-favored, methods leaning left are net-doubted.
+    // ---------------------------------------------------------------------
+    function renderChart(activeKeys) {
+        const data = selectedMoku
+            ? surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === selectedMoku.properties.MO_IS)
+            : surveyData;
+        const chartCats = categories.filter(c => activeKeys.includes(c.key));
         const mostData = [], somewhatData = [], hardlyData = [];
 
-        chartLabels.forEach(cat => {
-            const m = data.filter(d => d.attributes[cat.key] === 'Most effective').length * scalar;
-            const s = data.filter(d => d.attributes[cat.key] === 'Somewhat effective').length * scalar;
-            const h = data.filter(d => d.attributes[cat.key] === 'Hardly effective').length * scalar;
-            const sOffset = isNorm ? -(s / 2) : h;
-            hardlyData.push(isNorm ? [sOffset - h, sOffset] : [0, h]);
-            somewhatData.push([sOffset, sOffset + s]);
-            mostData.push([sOffset + s, sOffset + s + m]);
+        chartCats.forEach(cat => {
+            const most = data.filter(d => d.attributes[cat.key] === 'Most effective').length;
+            const som = data.filter(d => d.attributes[cat.key] === 'Somewhat effective').length;
+            const hard = data.filter(d => d.attributes[cat.key] === 'Hardly effective').length;
+            const total = most + som + hard;
+            const pM = total ? most / total : 0, pS = total ? som / total : 0, pH = total ? hard / total : 0;
+            const off = -pS / 2; // center zero on the midpoint of "Somewhat"
+            hardlyData.push([off - pH, off]);
+            somewhatData.push([off, off + pS]);
+            mostData.push([off + pS, off + pS + pM]);
         });
 
         if (chart) chart.destroy();
         chart = new Chart(document.getElementById('mainChart'), {
             type: 'bar',
             data: {
-                labels: chartLabels.map(c => c.label),
+                labels: chartCats.map(c => c.label),
                 datasets: [
                     { label: 'Hardly Effective', data: hardlyData, backgroundColor: '#e74c3c' },
                     { label: 'Somewhat Effective', data: somewhatData, backgroundColor: '#f1c40f' },
@@ -167,38 +340,52 @@
             },
             options: {
                 maintainAspectRatio: false,
-                scales: { y: { beginAtZero: !isNorm, grid: { color: (c) => c.tick.value === 0 ? '#000' : '#ddd', lineWidth: (c) => c.tick.value === 0 ? 3 : 1 } } },
-                plugins: { datalabels: { color: '#000', font: { weight: 'bold', size: 10 }, formatter: (v) => Math.abs(v[1]-v[0]) > (isNorm?0.05:2) ? Math.abs(v[1]-v[0]).toFixed(isNorm?2:0) : '' }, legend: { position: 'bottom' } }
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: { callback: v => Math.round(Math.abs(v) * 100) + '%' },
+                        grid: { color: c => c.tick.value === 0 ? '#000' : '#ddd', lineWidth: c => c.tick.value === 0 ? 3 : 1 }
+                    }
+                },
+                plugins: {
+                    datalabels: {
+                        color: '#000', font: { weight: 'bold', size: 10 },
+                        formatter: v => Math.abs(v[1] - v[0]) > 0.05 ? Math.round(Math.abs(v[1] - v[0]) * 100) + '%' : ''
+                    },
+                    legend: { position: 'bottom' },
+                    tooltip: { callbacks: { label: c => `${c.dataset.label}: ${Math.round(Math.abs(c.raw[1] - c.raw[0]) * 100)}%` } }
+                }
             }
         });
+    }
 
-        // Legend & Map Styling
+    // ---------------------------------------------------------------------
+    //  Legend adapts to the active map mode.
+    // ---------------------------------------------------------------------
+    function renderLegend(mu) {
         if (legend) map.removeControl(legend);
-        legend = L.control({position: 'bottomleft'});
+        legend = L.control({ position: 'bottomleft' });
         legend.onAdd = function () {
             const div = L.DomUtil.create('div', 'info legend');
-            div.innerHTML = `<strong>${isNorm ? 'Interest Intensity' : 'Total Responses'}</strong><br>`;
-            const grades = isNorm ? [0, 0.8, 1.1, 1.5, 2.0] : [0, 5, 20, 50, 100];
-            const labels = isNorm ? ['Low', 'Average', 'Above Avg', 'High', 'Significant'] : ['0-5', '6-20', '21-50', '51-100', '100+'];
-            for (let i = 0; i < grades.length; i++) {
-                div.innerHTML += `<i style="background:${isNorm ? getOutlierColor(grades[i]+0.1) : getRawColor(grades[i]+1)}"></i> ${labels[i]}<br>`;
+            const row = (color, text) => `<i style="background:${color}"></i> ${text}<br>`;
+            if (currentMode === 'responses') {
+                div.innerHTML = '<strong>Total Responses</strong><br>'
+                    + row(getRawColor(1), '0–5') + row(getRawColor(6), '6–20') + row(getRawColor(21), '21–50')
+                    + row(getRawColor(51), '51–100') + row(getRawColor(101), '100+');
+            } else if (currentMode === 'participation') {
+                div.innerHTML = '<strong>Voice vs. Population</strong><br>'
+                    + row(getParticipationColor(3), 'Far above (>1.7×)') + row(getParticipationColor(1.4), 'Above (1.2–1.7×)')
+                    + row(getParticipationColor(1), 'On par (0.8–1.2×)') + row(getParticipationColor(0.7), 'Below (0.6–0.8×)')
+                    + row(getParticipationColor(0.4), 'Far below (<0.6×)') + row(GREY, 'Too few people/responses');
+            } else {
+                div.innerHTML = `<strong>Sentiment vs. ${(mu * 100).toFixed(0)}% avg</strong><br>`
+                    + row(getSentimentColor(0.15), 'Well above avg') + row(getSentimentColor(0.06), 'Above avg')
+                    + row(getSentimentColor(0), 'About average') + row(getSentimentColor(-0.06), 'Below avg')
+                    + row(getSentimentColor(-0.15), 'Well below avg') + row(GREY, 'No responses');
             }
             return div;
         };
         legend.addTo(map);
-
-        geojsonLayer.eachLayer(layer => {
-            const mName = layer.feature.properties.MO_IS;
-            const mRes = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === mName);
-            let score = 0; activeKeys.forEach(k => score += mRes.filter(d => d.attributes[k] === 'Most effective').length);
-            const intensity = (score / layer.feature.properties.sum_TOTPOP_CY) / (totalSurveyCount / statePop);
-            layer.setStyle({
-                fillColor: isNorm ? getOutlierColor(intensity) : getRawColor(mRes.length),
-                fillOpacity: 0.8,
-                weight: selectedMoku && selectedMoku.properties.MO_IS === mName ? 4 : 1,
-                color: selectedMoku && selectedMoku.properties.MO_IS === mName ? '#000' : '#2c3e50'
-            });
-        });
     }
 
     map.on('zoomend', () => { if (map.getZoom() < 7) { map.removeLayer(labelLayers); } else { map.addLayer(labelLayers); } });
@@ -206,16 +393,24 @@
 
     Promise.all([fetch(surveyUrl).then(r => r.json()), fetch(mokuUrl).then(r => r.json())])
         .then(([sJson, mGeoJson]) => {
-            surveyData = sJson.features; mokuFeatures = mGeoJson.features;
+            if (!sJson.features || !mGeoJson.features) throw new Error('Unexpected service response');
+            surveyData = sJson.features;
+            mokuFeatures = mGeoJson.features;
+            buildAggregates();
+
             geojsonLayer = L.geoJSON(mGeoJson, {
                 onEachFeature: (feature, layer) => {
                     const name = feature.properties.MO_IS;
-                    const count = surveyData.filter(d => d.attributes.MOKUSELECTED_where_do_you_restr === name).length;
+                    const count = mokuAgg[name] ? mokuAgg[name].n : 0;
                     L.marker(layer.getBounds().getCenter(), { icon: L.divIcon({ className: 'moku-point-label', html: count > 0 ? count : '', iconSize: [30, 20] }), interactive: false }).addTo(labelLayers);
                     layer.bindTooltip(`<b>${name}</b>`, { sticky: true }).on('click', (e) => { L.DomEvent.stopPropagation(e); selectedMoku = feature; updateDashboard(); });
                 }
             }).addTo(map);
             updateDashboard();
+        })
+        .catch(err => {
+            document.getElementById('moku-stats').innerHTML =
+                `<span class="caveat">⚠ Could not load live data from ArcGIS.</span><br>${err.message}<br>Please refresh to retry.`;
         });
 </script>
 </body>
