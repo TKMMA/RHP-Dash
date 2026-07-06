@@ -34,7 +34,7 @@
         .header-version a { color: #3498db; text-decoration: none; }
 
         .chart-container { height: 600px; margin-top: 10px; position: relative; }
-        .chart-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+        .chart-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
         .btn-group-sm { margin-bottom: 0; }
         .btn-group-sm button { flex: 0 0 auto; padding: 6px 12px; font-size: 0.8rem; cursor: pointer; }
         .tool-btn { border: 1px solid #ccc; background: #fff; padding: 7px 12px; border-radius: 6px; font-weight: bold; font-size: 0.8rem; cursor: pointer; color: #2c3e50; white-space: nowrap; }
@@ -90,6 +90,10 @@
 
     <div class="chart-toolbar">
         <div class="btn-group btn-group-sm">
+            <button id="diverging-btn" class="active" onclick="setChartStyle('diverging')" title="Diverging: zero sits at the middle of 'Somewhat'; Most rises above, Hardly drops below. Best for seeing the balance of opinion.">Diverging</button>
+            <button id="stacked-btn" onclick="setChartStyle('stacked')" title="100% stacked: each bar runs 0–100% with Most on top and Hardly on the bottom, so shares are directly comparable across methods.">100% Stacked</button>
+        </div>
+        <div class="btn-group btn-group-sm">
             <button id="unstep-btn" class="active" onclick="setBarMode('unstep')" title="Single column: the three ratings overlap on one column.">Single Column</button>
             <button id="step-btn" onclick="setBarMode('step')" title="Stepped: the three ratings sit side-by-side like a staircase.">Stepped</button>
         </div>
@@ -127,6 +131,7 @@
     let chart, surveyData = [], mokuFeatures = [], selectedMoku = null,
         geojsonLayer = null, currentMode = 'responses', legend = null;
     let barMode = 'unstep';   // 'unstep' = one overlapping column | 'step' = side-by-side staircase
+    let chartStyle = 'diverging'; // 'diverging' (A, default) | 'stacked' (B, 0–100% baseline)
     let methodOrder = null;   // x-axis order of method keys; set to the statewide ranking on load
     let labelLayers = L.layerGroup().addTo(map);
 
@@ -177,6 +182,13 @@
         barMode = mode;
         ['unstep', 'step'].forEach(m =>
             document.getElementById(m + '-btn').className = (m === mode) ? 'active' : '');
+        updateDashboard();
+    }
+
+    function setChartStyle(style) {
+        chartStyle = style;
+        ['diverging', 'stacked'].forEach(s =>
+            document.getElementById(s + '-btn').className = (s === style) ? 'active' : '');
         updateDashboard();
     }
 
@@ -395,6 +407,7 @@
         const order = methodOrder || categories.map(c => c.key);
         const chartCats = order.filter(k => activeKeys.includes(k)).map(k => categories.find(c => c.key === k));
         const grouped = (barMode === 'step');
+        const stacked = (chartStyle === 'stacked'); // B: baseline 0–100% | A: diverging on zero
         const mostData = [], somewhatData = [], hardlyData = [];
 
         chartCats.forEach(cat => {
@@ -403,10 +416,16 @@
             const hard = data.filter(d => d.attributes[cat.key] === 'Hardly effective').length;
             const total = most + som + hard;
             const pM = total ? most / total : 0, pS = total ? som / total : 0, pH = total ? hard / total : 0;
-            const off = -pS / 2; // center zero on the midpoint of "Somewhat"
-            hardlyData.push([off - pH, off]);
-            somewhatData.push([off, off + pS]);
-            mostData.push([off + pS, off + pS + pM]);
+            if (stacked) {                       // B: stack up from 0 to 100%
+                hardlyData.push([0, pH]);
+                somewhatData.push([pH, pH + pS]);
+                mostData.push([pH + pS, pH + pS + pM]);
+            } else {                             // A: diverging, zero at the midpoint of "Somewhat"
+                const off = -pS / 2;
+                hardlyData.push([off - pH, off]);
+                somewhatData.push([off, off + pS]);
+                mostData.push([off + pS, off + pS + pM]);
+            }
         });
 
         if (chart) chart.destroy();
@@ -425,11 +444,9 @@
             options: {
                 maintainAspectRatio: false,
                 scales: {
-                    y: {
-                        beginAtZero: false,
-                        ticks: { callback: v => Math.round(Math.abs(v) * 100) + '%' },
-                        grid: { color: c => c.tick.value === 0 ? '#000' : '#ddd', lineWidth: c => c.tick.value === 0 ? 3 : 1 }
-                    }
+                    y: stacked
+                        ? { min: 0, max: 1, beginAtZero: true, ticks: { callback: v => Math.round(v * 100) + '%' }, grid: { color: '#ddd' } }
+                        : { beginAtZero: false, ticks: { callback: v => Math.round(Math.abs(v) * 100) + '%' }, grid: { color: c => c.tick.value === 0 ? '#000' : '#ddd', lineWidth: c => c.tick.value === 0 ? 3 : 1 } }
                 },
                 plugins: {
                     datalabels: {
