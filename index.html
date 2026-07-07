@@ -8,60 +8,99 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
     <style>
-        body { display: flex; height: 100vh; margin: 0; font-family: sans-serif; background: #f8f9fa; }
-        #map { flex: 1; position: relative; background: #fdfdfd; }
-        #dashboard { width: 550px; padding: 25px; overflow-y: auto; background: white; display: flex; flex-direction: column; border-left: 2px solid #dee2e6; }
+        :root {
+            --ink: #0f3a3d;
+            --ink-soft: #47616a;
+            --muted: #6c828b;
+            --page: #eef4f3;
+            --surface: #ffffff;
+            --sand: #f4efe7;
+            --sand-border: #e6dccb;
+            --aqua: #1b8a94;
+            --aqua-deep: #12727b;
+            --aqua-tint: #e2f0f0;
+            --aqua-tint-2: #d3e7e7;
+            --coral: #e8663f;
+            --coral-deep: #d1522d;
+            --caveat: #b23b1f;
+            --line: #dfe7e6;
+            --line-strong: #c9d7d6;
+            --radius-lg: 14px;
+            --radius: 10px;
+            --radius-sm: 7px;
+            --shadow-sm: 0 1px 2px rgba(15,58,61,0.06), 0 1px 3px rgba(15,58,61,0.05);
+            --shadow-md: 0 2px 6px rgba(15,58,61,0.07), 0 6px 18px rgba(15,58,61,0.06);
+            --shadow-lg: 0 4px 12px rgba(15,58,61,0.10), 0 12px 32px rgba(15,58,61,0.10);
+            --focus-ring: 0 0 0 3px rgba(27,138,148,0.35);
+            --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+        }
+
+        * { box-sizing: border-box; }
+
+        body { display: flex; height: 100vh; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: var(--page); color: var(--ink); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+        #map { flex: 1; position: relative; background: #e9f0ef; }
+        #dashboard { width: 560px; padding: 26px 26px 34px; overflow-y: auto; background: var(--page); display: flex; flex-direction: column; border-left: 1px solid var(--line); box-shadow: inset 1px 0 0 rgba(255,255,255,0.7); }
+
+        /* Custom scrollbar for the right panel */
+        #dashboard::-webkit-scrollbar { width: 10px; }
+        #dashboard::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 6px; border: 2px solid var(--page); }
+        #dashboard::-webkit-scrollbar-thumb:hover { background: var(--aqua); }
 
         /* Centered Compact Header */
-        .map-header {
-            position: absolute;
-            top: 15px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 1000;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 8px 20px;
-            border-radius: 30px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
-            pointer-events: auto;
-            border: 1px solid rgba(0,0,0,0.1);
-            text-align: center;
-            white-space: nowrap;
-        }
-        .header-title { color: #2c3e50; font-size: 1.4rem; font-weight: bold; display: inline-block; }
-        .header-subtitle { color: #7f8c8d; font-size: 0.95rem; font-weight: bold; display: inline-block; margin-left: 10px; border-left: 1px solid #ccc; padding-left: 10px; }
-        .header-version { color: #95a5a6; margin-top: 2px; font-size: 0.8rem; font-weight: normal; }
-        .header-version a { color: #3498db; text-decoration: none; }
+        .map-header { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 1000; background: rgba(255,255,255,0.92); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); padding: 9px 22px; border-radius: 999px; box-shadow: var(--shadow-lg); pointer-events: auto; border: 1px solid rgba(15,58,61,0.08); text-align: center; white-space: nowrap; }
+        .header-title { color: var(--ink); font-size: 1.32rem; font-weight: 700; letter-spacing: -0.01em; display: inline-block; }
+        .header-subtitle { color: var(--aqua-deep); font-size: 0.92rem; font-weight: 600; display: inline-block; margin-left: 12px; border-left: 1px solid var(--line-strong); padding-left: 12px; }
+        .header-version { color: var(--muted); margin-top: 3px; font-size: 0.76rem; font-weight: 400; }
+        .header-version a { color: var(--aqua); text-decoration: none; font-weight: 500; }
+        .header-version a:hover { color: var(--aqua-deep); text-decoration: underline; }
+        .header-version a:focus-visible { outline: 2px solid var(--aqua); outline-offset: 2px; border-radius: 3px; }
 
-        .chart-container { height: 600px; margin-top: 10px; position: relative; }
-        .chart-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
-        .btn-group-sm { margin-bottom: 0; }
-        .btn-group-sm button { flex: 0 0 auto; padding: 6px 12px; font-size: 0.8rem; cursor: pointer; }
-        .tool-btn { border: 1px solid #ccc; background: #fff; padding: 7px 12px; border-radius: 6px; font-weight: bold; font-size: 0.8rem; cursor: pointer; color: #2c3e50; white-space: nowrap; }
-        .tool-btn:hover { background: #f1f3f5; }
-        .tool-btn.stale { background: #3498db; color: #fff; border-color: #3498db; }
-        .controls { background: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid #3498db; }
-        #moku-title { color: #2c3e50; margin: 0; font-size: 1.4rem; }
-        #moku-stats { color: #7f8c8d; margin: 5px 0 10px 0; font-weight: normal; line-height: 1.5; font-size: 0.95rem; }
-        #moku-stats .metric { color: #2c3e50; font-weight: bold; }
-        #moku-stats .caveat { color: #c0392b; font-weight: bold; }
+        #moku-title { color: var(--ink); margin: 0 0 2px 0; font-size: 1.6rem; font-weight: 700; letter-spacing: -0.015em; line-height: 1.15; }
+        #moku-stats { color: var(--ink-soft); margin: 6px 0 16px 0; font-weight: 400; line-height: 1.55; font-size: 0.94rem; }
+        #moku-stats .metric { color: var(--ink); font-weight: 700; font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+        #moku-stats .caveat { color: var(--caveat); font-weight: 700; }
 
-        .filter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding: 10px; background: #fff; border-radius: 6px; border: 1px solid #ddd; }
-        .filter-hint { grid-column: 1 / -1; margin: 2px 0 0 0; font-size: 0.75rem; color: #95a5a6; font-style: italic; }
-        .btn-group { display: flex; background: #ddd; padding: 4px; border-radius: 8px; margin-bottom: 10px; }
-        .btn-group button { flex: 1; border: none; padding: 8px; cursor: pointer; border-radius: 6px; font-weight: bold; font-size: 0.85rem; }
-        .btn-group button.active { background: #3498db; color: white; cursor: default; }
-        .mode-desc { margin: 0 0 10px 0; padding: 9px 12px; background: #fff; border-radius: 6px; border-left: 4px solid #3498db; font-size: 0.82rem; color: #555; line-height: 1.45; }
-        .mode-desc b { color: #2c3e50; }
+        .controls { background: var(--surface); padding: 16px 16px 14px; border-radius: var(--radius-lg); margin-bottom: 14px; border: 1px solid var(--line); box-shadow: var(--shadow-sm); }
 
-        .moku-point-label {
-            background: none !important; border: none !important; box-shadow: none !important;
-            color: #000; font-weight: bold; font-size: 12px;
-            text-shadow: 1px 1px 2px white, -1px -1px 2px white;
-        }
+        .btn-group { display: flex; background: var(--aqua-tint); padding: 4px; border-radius: var(--radius); margin-bottom: 12px; gap: 4px; border: 1px solid var(--aqua-tint-2); }
+        .btn-group button { flex: 1; border: none; padding: 9px 8px; cursor: pointer; border-radius: var(--radius-sm); font-family: inherit; font-weight: 600; font-size: 0.85rem; color: var(--aqua-deep); background: transparent; transition: background-color .15s ease, color .15s ease, box-shadow .15s ease; }
+        .btn-group button:hover:not(.active) { background: rgba(255,255,255,0.6); color: var(--ink); }
+        .btn-group button.active { background: var(--surface); color: var(--ink); cursor: default; box-shadow: var(--shadow-sm); }
+        .btn-group button:focus-visible { outline: 2px solid var(--aqua); outline-offset: 1px; box-shadow: var(--focus-ring); }
 
-        .info.legend { padding: 10px; background: rgba(255,255,255,0.9); box-shadow: 0 0 15px rgba(0,0,0,0.2); border-radius: 5px; line-height: 18px; color: #555; font-size: 0.8rem; }
-        .info.legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.85; }
+        .mode-desc { margin: 0 0 12px 0; padding: 11px 14px; background: var(--aqua-tint); border-radius: var(--radius); border-left: 4px solid var(--aqua); font-size: 0.83rem; color: var(--ink-soft); line-height: 1.5; }
+        .mode-desc b { color: var(--ink); font-weight: 600; }
+
+        .filter-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin-top: 12px; padding: 14px; background: var(--sand); border-radius: var(--radius); border: 1px solid var(--sand-border); }
+        .filter-group label { display: flex; align-items: center; gap: 8px; font-size: 0.86rem; color: var(--ink-soft); cursor: pointer; line-height: 1.3; }
+        .filter-group input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--aqua); cursor: pointer; flex: 0 0 auto; margin: 0; }
+        .filter-group input[type="checkbox"]:focus-visible { outline: 2px solid var(--aqua); outline-offset: 2px; border-radius: 4px; }
+        .filter-hint { grid-column: 1 / -1; margin: 4px 0 0 0; font-size: 0.75rem; color: var(--muted); font-style: italic; line-height: 1.4; }
+
+        .chart-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+        .btn-group-sm { margin-bottom: 0; background: var(--aqua-tint); border: 1px solid var(--aqua-tint-2); padding: 3px; gap: 3px; border-radius: var(--radius-sm); }
+        .btn-group-sm button { flex: 0 0 auto; padding: 6px 13px; font-size: 0.78rem; border-radius: 5px; }
+
+        .tool-btn { border: 1px solid var(--line-strong); background: var(--surface); padding: 8px 14px; border-radius: var(--radius-sm); font-family: inherit; font-weight: 600; font-size: 0.78rem; cursor: pointer; color: var(--ink); white-space: nowrap; box-shadow: var(--shadow-sm); transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
+        .tool-btn:hover { background: var(--aqua-tint); border-color: var(--aqua); color: var(--aqua-deep); }
+        .tool-btn:focus-visible { outline: 2px solid var(--aqua); outline-offset: 1px; box-shadow: var(--focus-ring); }
+        .tool-btn.stale { background: var(--coral); color: #fff; border-color: var(--coral-deep); box-shadow: 0 2px 8px rgba(232,102,63,0.32); }
+        .tool-btn.stale:hover { background: var(--coral-deep); color: #fff; border-color: var(--coral-deep); }
+
+        .chart-container { height: 600px; margin-top: 14px; position: relative; padding: 16px 14px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+
+        .moku-point-label { background: none !important; border: none !important; box-shadow: none !important; color: var(--ink); font-weight: 700; font-size: 12px; text-shadow: 0 1px 2px #fff, 0 -1px 2px #fff, 1px 0 2px #fff, -1px 0 2px #fff; }
+
+        .info.legend { padding: 12px 14px; background: rgba(255,255,255,0.94); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); box-shadow: var(--shadow-md); border: 1px solid rgba(15,58,61,0.08); border-radius: var(--radius); line-height: 18px; color: var(--ink-soft); font-size: 0.8rem; }
+        .info.legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.85; border-radius: 3px; }
+
+        /* Elegant map-selection halo (replaces the old thick black box) */
+        .moku-selected { filter: drop-shadow(0 0 6px rgba(232,102,63,0.55)) drop-shadow(0 3px 5px rgba(15,58,61,0.30)); transition: filter 0.15s ease-out; }
+
+        /* Keyboard-focusable map polygons */
+        path.leaflet-interactive { cursor: pointer; }
+        path.leaflet-interactive:focus { outline: none; }
+        path.leaflet-interactive:focus-visible { outline: 2px solid var(--aqua); outline-offset: 1px; }
     </style>
 </head>
 <body>
@@ -70,7 +109,7 @@
     <div class="map-header">
         <span class="header-title">GFA Dashboard</span>
         <span class="header-subtitle">The Reef Habitat Plan</span>
-        <div class="header-version">By TK for DAR | <a href="https://docs.google.com/document/d/1yZgAC0Bs_O5a_DOmwVkMjCMVveab1P2VcyMG6-hPV_Q/edit?usp=sharing" target="_blank">RHP links</a> | <a href="https://github.com/TKMMA/RHP-Dash" target="_blank">README &amp; Github Repo</a> | v4.0 &middot; 7/6/26</div>
+        <div class="header-version">By TK for DAR | <a href="https://docs.google.com/document/d/1yZgAC0Bs_O5a_DOmwVkMjCMVveab1P2VcyMG6-hPV_Q/edit?usp=sharing" target="_blank">RHP links</a> | <a href="https://github.com/TKMMA/RHP-Dash" target="_blank">README &amp; Github Repo</a> | v4.2 &middot; 7/6/26</div>
     </div>
 </div>
 
@@ -107,7 +146,7 @@
     const map = L.map('map').setView([20.4, -157.4], 7);
 
     // CartoDB Positron for a clean, non-distracting basemap
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; CartoDB'
     }).addTo(map);
 
@@ -390,10 +429,14 @@
             const isSel = selectedMoku && selectedMoku.properties.MO_IS === name;
             layer.setStyle({
                 fillColor: fill,
-                fillOpacity: 0.85,
-                weight: isSel ? 4 : 1,
-                color: isSel ? '#000' : '#2c3e50'
+                fillOpacity: isSel ? 0.9 : 0.82,
+                weight: isSel ? 3 : 1,
+                color: isSel ? '#e8663f' : '#2c3e50',
+                opacity: isSel ? 1 : 0.9
             });
+            const el = layer.getElement();
+            if (el) el.classList.toggle('moku-selected', isSel);
+            if (isSel) layer.bringToFront();
         });
     }
 
