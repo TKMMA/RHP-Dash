@@ -11,7 +11,7 @@ The goal is to translate community input on **how and where fish habitat could b
 
 ---
 
-## 📊 The Three Map Views
+##  The Three Map Views
 The map answers three different questions about the same feedback. Toggle between them at the top of the panel; click any Moku to drill in, click the ocean to return statewide.
 
 | View | Question it answers | How it's colored |
