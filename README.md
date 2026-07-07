@@ -4,7 +4,7 @@ The **GFA (Geographic Focus Area) Dashboard** is an interactive spatial analysis
 
 ##  [Launch Dashboard](https://tkmma.github.io/RHP-Dash/)
 
-## 🌊 Project Context
+##  Project Context
 From July 2024 to April 2025, DAR's Fisheries Liaison engaged extensively with fishers across all islands through in-person events and social media. This dashboard visualizes the results of a **Survey123** that received roughly **1,100 responses** from Hawaiʻi's nearshore fishing community, rating six restoration methods and (optionally) naming where they'd like to see restoration happen.
 
 The goal is to translate community input on **how and where fish habitat could be improved** into a written action plan directly informed by those who know the resource best.
@@ -24,7 +24,7 @@ The map answers three different questions about the same feedback. Toggle betwee
 
 ---
 
-## 📐 Statistical Modeling & Calculations
+##  Statistical Modeling & Calculations
 The central modeling problem is **normalization**: a handful of dense urban Moku hold most of the state's population *and* most of the raw responses, which can drown out smaller rural fishing communities — while at the same time a single response in a near-empty district can masquerade as a dramatic "outlier." Every metric below is designed so that small, rural districts are neither buried nor turned into false signal.
 
 ### Three response totals (they differ on purpose)
@@ -84,7 +84,7 @@ Two complementary safeguards:
 
 ---
 
-## 📈 The Opinion Chart
+##  The Opinion Chart
 For the selected scope, the six methods are broken out by rating with several ways to read them:
 
 * **Diverging (default)** — a Likert view with zero at the midpoint of "Somewhat effective," so methods leaning right are net-favored and methods leaning left are net-doubted. Good for seeing the *balance* of opinion.
@@ -94,20 +94,20 @@ For the selected scope, the six methods are broken out by rating with several wa
 
 Bars are expressed as a **% of respondents**, which keeps them comparable across districts of any size. (Percent is the right scale for cross-district comparison; absolute counts are reserved for static figures in the written plan, where "685 of 1,017 fishers" carries more weight.)
 
-## 🧭 Panel Metrics
+##  Panel Metrics
 * **Participation.** The location quotient and the percentage-point gap between a Moku's response share and its population share (the ratio is suppressed for districts below the reporting thresholds).
 * **Density Ratio.** The "1 Response per X People" metric, to gauge the statistical weight of local feedback.
 * **Sentiment.** The Moku's smoothed favorability vs. the statewide average.
 * **Small-sample flag.** Districts below the response threshold are labeled so managers know when to treat a reading with caution.
 
-## 🗺 Interactive GIS Components
+##  Interactive GIS Components
 * **Permanent Map Labels:** Live response counts sit permanently over each Moku for instant readability.
 * **Restoration Filters:** Toggle six methods (e.g. *Invasive Limu Removal*, *Artificial Reefs*) to see how **Sentiment and the opinion chart** shift.
 * **Hover Discovery:** Hover over any polygon to confirm the specific Moku district name; click to drill in.
 
 ---
 
-## 🛠 Technical Architecture
+##  Technical Architecture
 This is a serverless, live-querying application. It fetches live updates directly from DAR's ArcGIS infrastructure on every load — there are no static data files.
 
 * **Mapping Engine:** [Leaflet.js](https://leafletjs.com/) (CartoDB Positron basemap)
@@ -120,7 +120,7 @@ All aggregation (per-Moku counts, favorability, location quotients, shrinkage, r
 
 ---
 
-## 📂 Related Resources
+##  Related Resources
 For more background on the geospatial analysis and project milestones, visit the [RHP Links & Resources](https://docs.google.com/document/d/1yZgAC0Bs_O5a_DOmwVkMjCMVveab1P2VcyMG6-hPV_Q/edit?usp=sharing) document.
 
 **Developed by TK for the State of Hawaiʻi Division of Aquatic Resources.**
